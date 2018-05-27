@@ -10,13 +10,13 @@ pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size)
 	struct pspat_mailbox *m;
 	int err;
 
-	m = kzalloc(pspat_mb_size(entries), GFP_KERNEL);
+	m = pspat_os_malloc(pspat_mb_size(entries));
 	if (m == NULL)
 		return ERR_PTR(-ENOMEM);
 
 	err = pspat_mb_init(m, name, entries, line_size);
 	if (err) {
-		kfree(m);
+		pspat_os_free(m);
 		return ERR_PTR(err);
 	}
 
@@ -30,13 +30,13 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 	unsigned long entries_per_line;
 
 	if (!is_power_of_2(entries) || !is_power_of_2(line_size) ||
-			entries * sizeof(uintptr_t) <= 2 * line_size || line_size < sizeof(uintptr_t))
+			entries * sizeof(void *) <= 2 * line_size || line_size < sizeof(void *))
 		return -EINVAL;
 
 	strncpy(m->name, name, PSPAT_MB_NAMSZ);
 	m->name[PSPAT_MB_NAMSZ - 1 ] = '\0';
 
-	entries_per_line = line_size / sizeof(uintptr_t);
+	entries_per_line = line_size / sizeof(void *);
 
 	m->line_entries = entries_per_line;
 	m->line_mask = ~(entries_per_line - 1);
@@ -44,7 +44,7 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 	m->seqbit_shift = ilog2(entries);
 
 #ifdef PSPAT_MB_DEBUG
-	printk("PSPAT: mb %p %s: line_entries %lu line_mask %lx entry_mask %lx seqbit_shift %lu\n",
+	printf("PSPAT: mb %p %s: line_entries %lu line_mask %lx entry_mask %lx seqbit_shift %lu\n",
 		m, m->name, m->line_entries, m->line_mask, m->entry_mask, m->seqbit_shift);
 #endif
 
@@ -69,15 +69,15 @@ void
 pspat_mb_delete(struct pspat_mailbox *m)
 {
 #ifdef PSPAT_MB_DEBUG
-	printk("PSPAT: deleting mb %s\n", m->name);
+	printf("PSPAT: deleting mb %s\n", m->name);
 #endif
-	kfree(m);
+	pspat_os_free(m);
 }
 
 
 void
 pspat_mb_dump_state(struct pspat_mailbox *m)
 {
-	printk("%s: cc %lu, cr %lu, pw %lu, pc %lu\n", m->name,
+	printf("%s: cc %lu, cr %lu, pw %lu, pc %lu\n", m->name,
 		m->cons_clear, m->cons_read, m->prod_write, m->prod_check);
 }

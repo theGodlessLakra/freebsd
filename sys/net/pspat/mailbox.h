@@ -4,13 +4,21 @@
 #ifdef _KERNEL
 #include <sys/kernel.h>
 #include <sys/param.h>
+#include <sys/malloc.h>
 
-#define START_NEW_CACHELINE	__aligned(CACHE_LINE_SIZE)
 #endif /* _KERNEL */
 
 #define PSPAT_MB_NAMSZ	32
 
 #define PSPAT_MB_DEBUG 1
+
+struct list_head {
+	struct list_head *next, *prev;
+};
+
+#define INIT_LIST_HEAD(ptr) do { (ptr)->next = (ptr); (ptr)->prev = (ptr); } while (0)
+
+#define is_power_of_2(x)	((x) != 0 && (((x) & ((x) - 1)) == 0))
 
 struct pspat_mailbox {
 	/* shared (constant) fields */
@@ -26,23 +34,21 @@ struct pspat_mailbox {
 	u64			identifier;
 
 	/* producer fields */
-	START_NEW_CACHELINE
-	unsigned long		prod_write;
+	unsigned long		prod_write __aligned(CACHE_LINE_SIZE);
 	unsigned long		prod_check;
 
 	/* consumer fields */
-	START_NEW_CACHELINE
-	unsigned long		cons_clear;
+	unsigned long		cons_clear __aligned(CACHE_LINE_SIZE);
 	unsigned long		cons_read;
 	struct list_head	list;
 
 	/* the queue */
-	uintptr_t		q[0] __aligned(CACHE_LINE_SIZE);
+	void *		q[0] __aligned(CACHE_LINE_SIZE);
 };
 
 static inline size_t pspat_mb_size(unsigned long entries)
 {
-	return roundup(sizeof(struct pspat_mailbox) + entries * sizeof(uintptr_t),
+	return roundup(sizeof(struct pspat_mailbox) + entries * sizeof(void *),
 			CACHE_LINE_SIZE);
 }
 
@@ -89,8 +95,6 @@ void pspat_mb_dump_state(struct pspat_mailbox *m);
  */
 static inline int pspat_mb_insert(struct pspat_mailbox *m, void *v)
 {
-	uintptr_t *h = &m->q[m->prod_write & m->entry_mask];
-
 	if (unlikely(m->prod_write == m->prod_check)) {
 		/* Leave a cache line empty. */
 		if (m->q[(m->prod_check + m->line_entries) & m->entry_mask])
@@ -98,30 +102,10 @@ static inline int pspat_mb_insert(struct pspat_mailbox *m, void *v)
 		m->prod_check += m->line_entries;
 		__builtin_prefetch(h + m->line_entries);
 	}
-	BUG_ON(((uintptr_t)v) & 0x1);
-//	*h = (uintptr_t)v | ((m->prod_write >> m->seqbit_shift) & 0x1);
-	*h = (uintptr_t)v;
+	BUG_ON(((void *)v) & 0x1);
+	m->q[m->prod_write & m->entry_mask] = v;
 	m->prod_write++;
 	return 0;
-}
-
-static inline int __pspat_mb_empty(struct pspat_mailbox *m, unsigned long i, uintptr_t v)
-{
-//	return (!v) || ((v ^ (i >>  m->seqbit_shift)) & 0x1);
-	return (!v);
-}
-
-/**
- * pspat_mb_empty - test for an empty mailbox
- * @m: the mailbox to test
- *
- * Returns non-zero if the mailbox is empty
- */
-static inline int pspat_mb_empty(struct pspat_mailbox *m)
-{
-	uintptr_t v = m->q[m->cons_read & m->entry_mask];
-
-	return __pspat_mb_empty(m, m->cons_read, v);
 }
 
 /**
@@ -134,15 +118,14 @@ static inline int pspat_mb_empty(struct pspat_mailbox *m)
  */
 static inline void *pspat_mb_extract(struct pspat_mailbox *m)
 {
-	uintptr_t v = m->q[m->cons_read & m->entry_mask];
+	void *v = m->q[m->cons_read & m->entry_mask];
 
-	if (__pspat_mb_empty(m, m->cons_read, v))
+	if (!v)
 		return NULL;
 
 	m->cons_read++;
 
-//	return (void *)(v & ~0x1);
-	return (void*) v;
+	return v;
 }
 
 
@@ -153,7 +136,7 @@ static inline void *pspat_mb_extract(struct pspat_mailbox *m)
  */
 static inline void pspat_mb_clear(struct pspat_mailbox *m)
 {
-	unsigned next_clear = (m->cons_read & ~(m->line_entries)) - m->line_entries;
+	unsigned next_clear = (m->cons_read & m->line_mask) - m->line_entries;
 
 	while(m->cons_clear != next_clear) {
 		m->q[m->cons_clear & m->entry_mask] = 0;
@@ -166,7 +149,7 @@ static inline void pspat_mb_clear(struct pspat_mailbox *m)
  * @m: the mailbox
  * @v: the value to be removed
  */
-void pspat_mb_cancel(struct pspat_mailbox *m, uintptr_t v);
+void pspat_mb_cancel(struct pspat_mailbox *m, void *v);
 
 static inline void pspat_mb_prefetch(struct pspat_mailbox *m)
 {
