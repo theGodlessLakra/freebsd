@@ -24,7 +24,6 @@ struct pspat_mailbox {
 	/* shared (constant) fields */
 	char			name[PSPAT_MB_NAMSZ];
 	unsigned long		entry_mask;
-	unsigned long		seqbit_shift;
 	unsigned long		line_entries;
 	unsigned long		line_mask;
 
@@ -61,8 +60,8 @@ static inline size_t pspat_mb_size(unsigned long entries)
  * Both entries and line_size must be a power of 2.
  * Returned pointer must be checked with IS_ERR().
  */
-struct pspat_mailbox *pspat_mb_new(const char *name, unsigned long entries,
-		unsigned long line_size);
+int pspat_mb_new(const char *name, unsigned long entries,
+		unsigned long line_size, struct pspat_mailbox **m);
 
 
 /**

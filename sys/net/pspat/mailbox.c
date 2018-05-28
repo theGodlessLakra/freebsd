@@ -4,23 +4,22 @@
 #endif /* _KERNEL */
 #include "mailbox.h"
 
-struct pspat_mailbox*
-pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size)
+int
+pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size, struct pspat_mailbox **m)
 {
-	struct pspat_mailbox *m;
 	int err;
 
-	m = pspat_os_malloc(pspat_mb_size(entries));
-	if (m == NULL)
-		return ERR_PTR(-ENOMEM);
+	*m = pspat_os_malloc(pspat_mb_size(entries));
+	if (*m == NULL)
+		return -ENOMEM;
 
 	err = pspat_mb_init(m, name, entries, line_size);
 	if (err) {
-		pspat_os_free(m);
-		return ERR_PTR(err);
+		pspat_os_free(*m);
+		return err;
 	}
 
-	return m;
+	return 0;
 }
 
 int
@@ -41,11 +40,10 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 	m->line_entries = entries_per_line;
 	m->line_mask = ~(entries_per_line - 1);
 	m->entry_mask = entries - 1;
-	m->seqbit_shift = ilog2(entries);
 
 #ifdef PSPAT_MB_DEBUG
-	printf("PSPAT: mb %p %s: line_entries %lu line_mask %lx entry_mask %lx seqbit_shift %lu\n",
-		m, m->name, m->line_entries, m->line_mask, m->entry_mask, m->seqbit_shift);
+	printf("PSPAT: mb %p %s: line_entries %lu line_mask %lx entry_mask %lx\n",
+		m, m->name, m->line_entries, m->line_mask, m->entry_mask);
 #endif
 
 	m->cons_clear = 0;
