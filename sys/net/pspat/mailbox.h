@@ -12,6 +12,8 @@
 
 #define PSPAT_MB_DEBUG 1
 
+MALLOC_DECLARE(M_MB);
+
 struct list_head {
 	struct list_head *next, *prev;
 };

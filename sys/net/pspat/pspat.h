@@ -1,7 +1,20 @@
 #ifndef __PSPAT_H__
 #define __PSPAT_H__
 
+#include <sys/param.h>
+#include <sys/kernel.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <sys/mbuf.h>
+#include <sys/kthread.h>
+#include <sys/malloc.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/if_types.h>
+
 #include "mailbox.h"
+
+MALLOC_DECLARE(M_PSPAT);
 
 /* per-cpu data structure */
 struct pspat_queue {
@@ -24,13 +37,8 @@ struct pspat_dispatcher {
 };
 
 struct pspat {
-	struct task_struct	*arb_task;
-	struct task_struct	*snd_task;
-
-	/* list of all the qdiscs that we stole from the system */
-	struct Qdisc	       *qdiscs;
-
-	struct Qdisc		bypass_qdisc;
+	struct thread	*arb_thread;
+	struct thread	*snd_thread;
 
 	/* list of dead mailboxes to be deleted at the first
 	 * safe opportunity
@@ -44,10 +52,6 @@ struct pspat {
 	u64			num_picos;
 	u64			last_ts;
 
-	/* list of all netdev_queue on which we are actively
-	 * transmitting */
-	struct list_head	active_txqs;
-
 	/* mailboxes between the arbiter and the dispatchers
 	 * (used with PSPAT_XMIT_MODE_DISPATCH) */
 	struct pspat_dispatcher	dispatchers[1];
@@ -59,13 +63,10 @@ struct pspat {
 
 extern struct pspat *pspat_arb;
 
-void *pspat_os_malloc(size_t);
-void pspat_os_free(void *);
-
 int pspat_do_arbiter(struct pspat *arb);
 
-int pspat_client_handler(struct sk_buff *skb, struct Qdisc *q,
-	              struct net_device *dev, struct netdev_queue *txq);
+int pspat_client_handler(struct mbuf *mb,  struct ifnet *ifdev);
+
 void pspat_shutdown(struct pspat *arb);
 
 int pspat_do_dispatcher(struct pspat_dispatcher *s);

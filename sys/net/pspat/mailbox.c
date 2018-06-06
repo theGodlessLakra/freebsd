@@ -4,18 +4,20 @@
 #endif /* _KERNEL */
 #include "mailbox.h"
 
+MALLOC_DEFINE(M_MB, "mailbox", "IFFQ Mailbox Implementation");
+
 int
 pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size, struct pspat_mailbox **m)
 {
 	int err;
 
-	*m = pspat_os_malloc(pspat_mb_size(entries));
+	*m = malloc(pspat_mb_size(entries), M_MB, M_WAITOK);
 	if (*m == NULL)
 		return -ENOMEM;
 
 	err = pspat_mb_init(m, name, entries, line_size);
 	if (err) {
-		pspat_os_free(*m);
+		free(*m, M_MB);
 		return err;
 	}
 
