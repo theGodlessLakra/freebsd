@@ -1,5 +1,7 @@
 #include <sys/types.h>
 #include <sys/mutex.h>
+#include <sys/lock.h>
+#include <sys/rwlock.h>
 #include <sys/systm.h>
 #include <sys/sysctl.h>
 #include <sys/smp.h>
@@ -21,6 +23,8 @@ int pspat_debug_xmit __read_mostly = 0;
 int pspat_xmit_mode __read_mostly = PSPAT_XMIT_MODE_ARB;
 int pspat_single_txq __read_mostly = 1; /* use only one hw queue */
 int pspat_tc_bypass __read_mostly = 0;
+int arb_thread_stop __read_mostly = 0;
+int snd_thread_stop __read_mostly = 0;
 u64 pspat_rate __read_mostly = 40000000000; // 40Gb/s
 u64 pspat_arb_interval_ns __read_mostly = 1000;
 u32 pspat_arb_qdisc_batch __read_mostly = 512;
@@ -36,24 +40,21 @@ u64 pspat_arb_loop_max_ns = 0;
 u64 pspat_arb_loop_avg_reqs = 0;
 u64 pspat_mailbox_entries = 512;
 u64 pspat_mailbox_line_size = 128;
-u64 *pspat_rounds; /* curthread->ly unused */
-static int pspat_zero = 0;
-static int pspat_one = 1;
-static int pspat_two = 2;
-static unsigned long pspat_ulongzero = 0UL;
-static unsigned long pspat_ulongone = 1UL;
-static unsigned long pspat_ulongmax = (unsigned long)-1;
+u64 *pspat_rounds; /* currently unused */
 static unsigned long pspat_pages;
 
 static struct mtx pspat_glock;
+static struct rwlock pspat_rwlock;
 static struct sysctl_ctx_list clist;
+
+int (*orig_oid_hanlder)(SYSCTL_HANDLER_ARGS);
 
 
 static int
 pspat_enable_oid_handler(struct sysctl_oid *oidp, void *arg1,
 			  intmax_t arg2, struct sysctl_req *req)
 {
-//	int ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	int ret = orig_oid_hanlder(oidp, arg1, arg2, req);
 
 	if (ret || !write || !pspat_enable || !arbp) {
 		return ret;
@@ -69,7 +70,7 @@ static int
 pspat_xmit_mode_oid_handler(struct sysctl_oid *oidp, void *arg1,
 			     intmax_t arg2, struct sysctl_req *req)
 {
-//	int ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	int ret = orig_oid_hanlder(oidp, arg1, arg2, req);
 
 	if (ret || !write || !pspat_enable || !arbp
 			|| pspat_xmit_mode != PSPAT_XMIT_MODE_DISPATCH) {
@@ -119,6 +120,7 @@ pspat_sysctl_init(void)
 
 	oidp = SYSCTL_ADD_INT(&clist, SYSCTL_CHILDREN(pspat_oid),
 	    OID_AUTO, "enable", CTLFLAG_RW, &pspat_enable, 0,	"enable under pspat");
+	orig_oid_hanlder = oidp->oid_handler;
 	oidp->oid_handler = &pspat_enable_oid_handler;
 
 	oidp = SYSCTL_ADD_INT(&clist, SYSCTL_CHILDREN(pspat_oid),
@@ -235,28 +237,31 @@ arb_worker_func(void *data)
 	struct timespec ts;
 	bool arb_registered = false;
 
-	while (!kthread_suspend_check()) {
+	while (!arb_thread_stop) {
 		if (!pspat_enable) {
 			if (arb_registered) {
                                 /* PSPAT is disabled but arbiter is still
                                  * registered: we need to unregister. */
 				mtx_lock(&pspat_glock);
 				pspat_shutdown(arb);
+				rw_wlock(pspat_rwlock);
 				pspat_arb = NULL;
+				rw_wunlock(pspat_rwlock);
 				mtx_unlock(&pspat_glock);
 				arb_registered = false;
 				printf("PSPAT arbiter unregistered\n");
 			}
 
-//			set_curthread->_state(TASK_INTERRUPTIBLE);
-//			schedule();
+			kthread_suspend(curthread, 0);
 
 		} else {
 			if (!arb_registered) {
 				/* PSPAT is enabled but arbiter is not
                                  * registered: we need to register. */
 				mtx_lock(&pspat_glock);
+				rw_wlock(pspat_rwlock);
 				pspat_arb = arb;
+				rw_wunlock(pspat_rwlock);
 				mtx_unlock(&pspat_glock);
 				arb_registered = true;
 				printf("PSPAT arbiter registered\n");
@@ -268,10 +273,6 @@ arb_worker_func(void *data)
 			}
 
 			pspat_do_arbiter(arb);
-//			if (need_resched()) {
-//				set_curthread->_state(TASK_INTERRUPTIBLE);
-//				schedule_timeout(1);
-//			}
 		}
 	}
 
@@ -283,22 +284,16 @@ snd_worker_func(void *data)
 {
 	struct pspat_dispatcher *s = (struct pspat_dispatcher *)data;
 
-	while (!kthread_suspend_check()) {
+	while (!snd_thread_stop) {
 		if (pspat_xmit_mode != PSPAT_XMIT_MODE_DISPATCH
 						|| !pspat_enable) {
 			printf("PSPAT dispatcher deactivated\n");
 			pspat_dispatcher_shutdown(s);
-//			set_curthread->_state(TASK_INTERRUPTIBLE);
-//			schedule();
-//			printf("PSPAT dispatcher activated\n");
+			kthread_suspend(curthread, 0);
+			printf("PSPAT dispatcher activated\n");
 
-		} else {
+		} else
 			pspat_do_dispatcher(s);
-//			if (need_resched()) {
-//				set_curthread->_state(TASK_INTERRUPTIBLE);
-//				schedule_timeout(1);
-//			}
-		}
 	}
 
 	kthread_exit();
@@ -311,11 +306,11 @@ pspat_destroy(void)
 	BUG_ON(arbp == NULL);
 
 	if (arbp->arb_thread) {
-		kthread_suspend(arbp->arb_thread, 0);
+		arb_thread_stop = 1;
 		arbp->arb_thread = NULL;
 	}
 	if (arbp->snd_thread) {
-		kthread_suspend(arbp->snd_thread, 0);
+		snd_thread_stop = 1;
 		arbp->snd_thread = NULL;
 	}
 
@@ -340,7 +335,7 @@ pspat_create_client_queue(void)
 	if (curthread->pspat_mb)
 		return 0;
 
-	snprintf(name, PSPAT_MB_NAMSZ, "CM-%d", curthread->pid);
+	snprintf(name, PSPAT_MB_NAMSZ, "CM-%d", curthread->td_tid);
 
 	err = pspat_mb_new(name, pspat_mailbox_entries, pspat_mailbox_line_size, &m);
 	if (err)
@@ -432,7 +427,7 @@ pspat_create(void)
 
 	return 0;
 fail2:
-	kthread_suspend(arbp->arb_thread, 0);
+	arb_thread_stop = 1;
 	arbp->arb_thread = NULL;
 fail:
 	free((void *)arbp, M_PSPAT);
@@ -447,6 +442,7 @@ pspat_init(void)
 	int ret;
 
 	mtx_init(&pspat_glock, "pspat_glock", NULL, MTX_DEF);
+	rw_init(pspat_rwlock,	"pspat_rwlock");
 
 	ret = pspat_sysctl_init();
 	if (ret) {
@@ -472,6 +468,7 @@ pspat_fini(void)
 {
 	pspat_destroy();
 	pspat_sysctl_fini();
+	rw_destroy(pspat_rwlock);
 	mtx_destroy(&pspat_glock);
 }
 

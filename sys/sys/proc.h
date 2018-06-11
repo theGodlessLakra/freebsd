@@ -329,6 +329,10 @@ struct thread {
 					   fork for child tracing. */
 #define	td_endcopy td_pcb
 
+#ifdef CONFIG_PSPAT
+	struct pspat_mailbox            *pspat_mb; /* PSPAT networking subsystem. */
+#endif
+
 /*
  * Fields that must be manually set in fork1() or create_thread()
  * or already have been set in the allocator, constructor, etc.
