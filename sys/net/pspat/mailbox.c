@@ -60,7 +60,7 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 		initial_clear++;
 	}
 
-	INIT_LIST_HEAD(&m->list);
+	TAILQ_INIT(&m->head);
 
 	return 0;
 }
@@ -71,7 +71,7 @@ pspat_mb_delete(struct pspat_mailbox *m)
 #ifdef PSPAT_MB_DEBUG
 	printf("PSPAT: deleting mb %s\n", m->name);
 #endif
-	pspat_os_free(m);
+	free(m, M_MB);
 }
 
 

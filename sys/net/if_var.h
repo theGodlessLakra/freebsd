@@ -233,6 +233,8 @@ typedef int (if_snd_tag_modify_t)(struct m_snd_tag *, union if_snd_tag_modify_pa
 typedef int (if_snd_tag_query_t)(struct m_snd_tag *, union if_snd_tag_query_params *);
 typedef void (if_snd_tag_free_t)(struct m_snd_tag *);
 
+extern struct entry;
+
 /*
  * Structure defining a network interface.
  */
@@ -387,6 +389,14 @@ struct ifnet {
 	 * binary interface.
 	 */
 	int	if_ispare[4];		/* general use */
+
+#ifdef CONFIG_PSPAT
+	struct mbuf	       *pspat_markq_head;
+	struct mbuf	       *pspat_markq_tail;
+	struct mbuf	       *pspat_validq_head;
+	struct mbuf	       *pspat_validq_tail;
+	TAILQ_HEAD(tailhead, entry) pspat_active = TAILQ_HEAD_INITIALIZER(pspat_active);
+#endif
 };
 
 /* for compatibility with other BSDs */

@@ -1,4 +1,3 @@
-#include <sys/types.h>
 #include <sys/mutex.h>
 #include <sys/lock.h>
 #include <sys/rwlock.h>
@@ -200,7 +199,7 @@ pspat_sysctl_init(void)
 	for (i = 0; i < cpus; i++) {
 		n = snprintf(name, 16, "inq-drop-%d", i);
 
-		t = SYSCTL_ADD_U64(&clist, SYSCTL_CHILDREN(cpu), OID_AUTO, name,
+		t = SYSCTL_ADD_U64(&clist, SYSCTL_CHILDREN(pspat_cpu_oid), OID_AUTO, name,
 			CTLFLAG_RW, &pspat_stats[i].inq_drop, 0, name);
 
 		name += n + 1;
@@ -387,11 +386,11 @@ pspat_create(void)
 			goto fail;
 		}
 		arbp->queues[i].inq = m;
-		INIT_LIST_HEAD(&arbp->queues[i].mb_to_clear);
+		TAILQ_INIT(&arbp->queues[i].mb_to_clear);
 		m = (void *)m + mb_size;
 	}
-	INIT_LIST_HEAD(&arbp->mb_to_delete);
-	INIT_LIST_HEAD(&arbp->active_txqs);
+	TAILQ_INIT(&arbp->mb_to_delete);
+	TAILQ_INIT(&arbp->active_txqs);
 
 	for (i = 0; i < dispatchers; i++) {
 		char name[PSPAT_MB_NAMSZ];
@@ -401,7 +400,7 @@ pspat_create(void)
 			goto fail;
 		}
 		arbp->dispatchers[i].mb = m;
-		INIT_LIST_HEAD(&arbp->dispatchers[i].active_txqs);
+		TAILQ_INIT(&arbp->dispatchers[i].active_txqs);
 		m = (void *)m + mb_size;
 	}
 

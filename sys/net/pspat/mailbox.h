@@ -5,6 +5,7 @@
 #include <sys/kernel.h>
 #include <sys/param.h>
 #include <sys/malloc.h>
+#include <sys/queue.h>
 
 #endif /* _KERNEL */
 
@@ -12,15 +13,15 @@
 
 #define PSPAT_MB_DEBUG 1
 
+#define is_power_of_2(x)	((x) != 0 && (((x) & ((x) - 1)) == 0))
+
 MALLOC_DECLARE(M_MB);
 
-struct list_head {
-	struct list_head *next, *prev;
+struct entry {
+	TAILQ_ENTRY(entry)	entries;
 };
 
-#define INIT_LIST_HEAD(ptr) do { (ptr)->next = (ptr); (ptr)->prev = (ptr); } while (0)
-
-#define is_power_of_2(x)	((x) != 0 && (((x) & ((x) - 1)) == 0))
+extern struct tailhead;
 
 struct pspat_mailbox {
 	/* shared (constant) fields */
@@ -41,7 +42,9 @@ struct pspat_mailbox {
 	/* consumer fields */
 	unsigned long		cons_clear __aligned(CACHE_LINE_SIZE);
 	unsigned long		cons_read;
-	struct list_head	list;
+
+	struct entry list;
+	TAILQ_HEAD(tailhead, entry) head = TAILQ_HEAD_INITIALIZER(head);
 
 	/* the queue */
 	void *		q[0] __aligned(CACHE_LINE_SIZE);

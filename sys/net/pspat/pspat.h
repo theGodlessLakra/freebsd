@@ -8,6 +8,7 @@
 #include <sys/mbuf.h>
 #include <sys/kthread.h>
 #include <sys/malloc.h>
+#include <sys/types.h>
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h>
@@ -28,22 +29,27 @@ struct pspat_queue {
 	/* arbiter fields */
 	u64			arb_extract_next __aligned(CACHE_LINE_SIZE);
 	struct pspat_mailbox   *arb_last_mb;
-	struct list_head	mb_to_clear;
+	TAILQ_HEAD(tailhead, entry) mb_to_clear = TAILQ_HEAD_INITIALIZER(mb_to_clear);
 };
 
 struct pspat_dispatcher {
 	struct pspat_mailbox	*mb;
-	struct list_head	active_txqs;
+	TAILQ_HEAD(tailhead, entry) active_txqs = TAILQ_HEAD_INITIALIZER(active_txqs);
 };
 
 struct pspat {
 	struct thread	*arb_thread;
 	struct thread	*snd_thread;
 
+	/* list of all the ifaltqs that we stole from the system */
+	struct ifaltq	       *ifaltqs;
+
+	struct ifaltq		bypass_ifaltq;
+
 	/* list of dead mailboxes to be deleted at the first
 	 * safe opportunity
 	 */
-	struct list_head	mb_to_delete;
+	TAILQ_HEAD(tailhead, entry) mb_to_delete = TAILQ_HEAD_INITIALIZER(mb_to_delete);
 
 	/* Statistics to evaluate the cost of an arbiter loop. */
 	unsigned int		num_loops;
@@ -51,6 +57,10 @@ struct pspat {
 	u64			max_picos;
 	u64			num_picos;
 	u64			last_ts;
+
+	/* list of all ifnets on which we are actively
+	 * transmitting */
+	TAILQ_HEAD(tailhead, entry) active_txqs = TAILQ_HEAD_INITIALIZER(active_txqs);
 
 	/* mailboxes between the arbiter and the dispatchers
 	 * (used with PSPAT_XMIT_MODE_DISPATCH) */
@@ -65,7 +75,7 @@ extern struct pspat *pspat_arb;
 
 int pspat_do_arbiter(struct pspat *arb);
 
-int pspat_client_handler(struct mbuf *mb,  struct ifnet *ifdev);
+int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp);
 
 void pspat_shutdown(struct pspat *arb);
 
