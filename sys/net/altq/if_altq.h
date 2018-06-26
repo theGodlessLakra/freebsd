@@ -58,13 +58,6 @@ struct	ifaltq {
 	void	*altq_disc;		/* for discipline-specific use */
 	struct	ifnet *altq_ifp;	/* back pointer to interface */
 
-#ifdef CONFIG_PSPAT
-	int			pspat_owned;
-	struct ifaltq	       *pspat_next;
-	u64			pspat_next_link_idle;
-	uint32_t		pspat_batch_limit;
-#endif /* CONFIG_PSPAT */
-
 	int	(*altq_enqueue)(struct ifaltq *, struct mbuf *,
 				struct altq_pktattr *);
 	struct	mbuf *(*altq_dequeue)(struct ifaltq *, int);
