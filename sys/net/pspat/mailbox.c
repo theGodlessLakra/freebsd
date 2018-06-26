@@ -1,13 +1,12 @@
-#ifdef _KERNEL
-#include <sys/kernel.h>
-#include <sys/param.h>
-#endif /* _KERNEL */
 #include "mailbox.h"
+
+#define is_power_of_2(x)	((x) != 0 && (((x) & ((x) - 1)) == 0))
 
 MALLOC_DEFINE(M_MB, "mailbox", "IFFQ Mailbox Implementation");
 
 int
-pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size, struct pspat_mailbox **m)
+pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size,
+		struct pspat_mailbox **m)
 {
 	int err;
 
@@ -60,7 +59,9 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 		initial_clear++;
 	}
 
-	TAILQ_INIT(&m->head);
+	/* Initialize the TAILQ list entry */
+	ENTRY_INIT(&m->entry);
+	m->entry.mb = m;
 
 	return 0;
 }

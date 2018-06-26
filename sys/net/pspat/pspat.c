@@ -1,10 +1,8 @@
 #include <sys/mutex.h>
 #include <sys/lock.h>
-#include <sys/rwlock.h>
 #include <sys/systm.h>
 #include <sys/sysctl.h>
 #include <sys/smp.h>
-#include <sys/proc.h>
 
 #include "pspat.h"
 
@@ -14,24 +12,19 @@ MALLOC_DEFINE(M_PSPAT, "pspat", "PSPAT Networking Subsystem");
 
 SYSCTL_DECL(_net);
 
-struct pspat *pspat_arb;  /* RCU-dereferenced */
+struct pspat *pspat_arb;
 static struct pspat *arbp; /* For internal usage */
 
 int pspat_enable __read_mostly = 0;
 int pspat_debug_xmit __read_mostly = 0;
 int pspat_xmit_mode __read_mostly = PSPAT_XMIT_MODE_ARB;
-int pspat_single_txq __read_mostly = 1; /* use only one hw queue */
-int pspat_tc_bypass __read_mostly = 0;
 int arb_thread_stop __read_mostly = 0;
 int snd_thread_stop __read_mostly = 0;
 u64 pspat_rate __read_mostly = 40000000000; // 40Gb/s
 u64 pspat_arb_interval_ns __read_mostly = 1000;
-u32 pspat_arb_qdisc_batch __read_mostly = 512;
+u32 pspat_arb_batch __read_mostly = 512;
 u32 pspat_dispatch_batch __read_mostly = 256;
-u32 pspat_dispatch_sleep_us __read_mostly = 0;
-u64 pspat_arb_tc_enq_drop = 0;
 u64 pspat_arb_backpressure_drop = 0;
-u64 pspat_arb_tc_deq = 0;
 u64 pspat_arb_dispatch_drop = 0;
 u64 pspat_dispatch_deq = 0;
 u64 pspat_arb_loop_avg_ns = 0;
@@ -43,7 +36,6 @@ u64 *pspat_rounds; /* currently unused */
 static unsigned long pspat_pages;
 
 static struct mtx pspat_glock;
-static struct rwlock pspat_rwlock;
 static struct sysctl_ctx_list clist;
 
 int (*orig_oid_hanlder)(SYSCTL_HANDLER_ARGS);
@@ -135,10 +127,6 @@ pspat_sysctl_init(void)
 	    OID_AUTO, "debug_xmit", CTLFLAG_RW, &pspat_debug_xmit, 0,
 	    "debug_xmit under pspat");
 
-	oidp = SYSCTL_ADD_INT(&clist, SYSCTL_CHILDREN(pspat_oid),
-	    OID_AUTO, "single_txq", CTLFLAG_RW, &pspat_single_txq, 1,
-	    "single_txq under pspat");
-
 	oidp = SYSCTL_ADD_U64(&clist, SYSCTL_CHILDREN(pspat_oid),
 	    OID_AUTO, "arb_interval_ns", CTLFLAG_RW, &pspat_arb_interval_ns, 1000,
 	    "arb_interval_ns under pspat");
@@ -146,10 +134,6 @@ pspat_sysctl_init(void)
 	oidp = SYSCTL_ADD_32(&clist, SYSCTL_CHILDREN(pspat_oid),
 	    OID_AUTO, "dispatch_batch", CTLFLAG_RW, &pspat_dispatch_batch, 256,
 	    "dispatch_batch under pspat");
-
-	oidp = SYSCTL_ADD_U32(&clist, SYSCTL_CHILDREN(pspat_oid),
-	    OID_AUTO, "dispatch_sleep_us", CTLFLAG_RW, &pspat_dispatch_sleep_us, 0,
-	    "dispatch_sleep_us under pspat");
 
 	oidp = SYSCTL_ADD_U64(&clist, SYSCTL_CHILDREN(pspat_oid),
 	    OID_AUTO, "rate", CTLFLAG_RW, &pspat_rate, 40000000000,
@@ -226,9 +210,6 @@ pspat_sysctl_fini(void)
 		free((void *)pspat_stats, M_PSPAT);
 }
 
-/* Hook exported by ___ */
-extern int (*pspat_handler)(struct mbuf *,  struct ifnet *);
-
 static void
 arb_worker_func(void *data)
 {
@@ -303,6 +284,10 @@ pspat_destroy(void)
 {
 	mtx_lock(&pspat_glock);
 	BUG_ON(arbp == NULL);
+
+	rw_wlock(pspat_rwlock);
+	pspat_arb = NULL;
+	rw_wunlock(pspat_rwlock);
 
 	if (arbp->arb_thread) {
 		arb_thread_stop = 1;
@@ -390,7 +375,6 @@ pspat_create(void)
 		m = (void *)m + mb_size;
 	}
 	TAILQ_INIT(&arbp->mb_to_delete);
-	TAILQ_INIT(&arbp->active_txqs);
 
 	for (i = 0; i < dispatchers; i++) {
 		char name[PSPAT_MB_NAMSZ];
@@ -400,18 +384,17 @@ pspat_create(void)
 			goto fail;
 		}
 		arbp->dispatchers[i].mb = m;
-		TAILQ_INIT(&arbp->dispatchers[i].active_txqs);
 		m = (void *)m + mb_size;
 	}
 
 	ret = kthread_add(arb_worker_func, arbp, NULL,
-		&arbp->arb_thread, 0, 0, "pspat-arb");
+		&arbp->arb_thread, 0, 0, "pspat_arbiter_thread");
 	if (ret) {
 		goto fail;
 	}
 
 	ret = kthread_add(snd_worker_func, &arbp->dispatchers[0], NULL,
-		&arbp->snd_thread, 0, 0, "pspat-snd");
+		&arbp->snd_thread, 0, 0, "pspat_dispatcher_thread");
 	if (ret) {
 		goto fail2;
 	}

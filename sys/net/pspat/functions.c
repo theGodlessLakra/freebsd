@@ -1,8 +1,10 @@
 #include <machine/atomic.h>
+#include <net/ethernet.h>
 
 #include "pspat.h"
 
 #define	NSEC_PER_SEC	1000000000L
+#define	PSPAT_ARB_STATS_LOOPS	0x1000
 
 /* Pseudo-identifier for client mailboxes. It's used by pspat_cli_push()
  * to decide when to insert an entry in the CL. Way safer than the previous
@@ -29,8 +31,6 @@ pspat_cli_push(struct pspat_queue *pq, struct mbuf *mbf)
 	}
 	m = curthread->pspat_mb;
 
-        /* The backpressure flag set tells us that the qdisc is being overrun.
-         * We return an error to propagate the overrun to the client. */
 	if (unlikely(m->backpressure)) {
 		m->backpressure = 0;
 		if (pspat_debug_xmit) {
@@ -44,7 +44,7 @@ pspat_cli_push(struct pspat_queue *pq, struct mbuf *mbf)
 		return err;
 	/* avoid duplicate notification */
 	if (pq->cli_last_mb != m->identifier) {
-//		smp_mb(); /* let the arbiter see the insert above */
+		mb(); /* let the arbiter see the insert above */
 		err = pspat_mb_insert(pq->inq, m);
 		BUG_ON(err);
 		pq->cli_last_mb = m->identifier;
@@ -57,20 +57,16 @@ static void
 pspat_cli_delete(struct pspat *arb, struct pspat_mailbox *m)
 {
 	int i;
+	struct pspat_queue *pq;
+
 	/* remove m from all the client lists current-mb pointers */
 	for (i = 0; i < arb->n_queues; i++) {
-		struct pspat_queue *pq = arb->queues + i;
+		pq = arb->queues + i;
 		if (pq->arb_last_mb == m)
 			pq->arb_last_mb = NULL;
 	}
-	/* possibily remove this mb from the ack list */
-	while (!TAILQ_EMPTY(&m->head)) {
-		struct entry *entry1 = TAILQ_FIRST(&m->head);
-		TAILQ_REMOVE(&m->head, entry1, entries);
-	}
-
 	/* insert into the list of mb to be delete */
-	TAILQ_INSERT_TAIL(&arb->mb_to_delete, &m->list, entries);
+	TAILQ_INSERT_TAIL(&arb->mb_to_delete, &m->entry, entries);
 }
 
 static struct pspat_mailbox *
@@ -81,12 +77,12 @@ pspat_arb_get_mb(struct pspat_queue *pq)
 	if (m == NULL || pspat_mb_empty(m)) {
 		m = pspat_mb_extract(pq->inq);
 		if (m) {
-			if (TAILQ_EMPTY(&pq->inq->head)) {
-				TAILQ_INSERT_TAIL(&pq->mb_to_clear, &pq->inq->list, entries);
+			if (ENTRY_EMPTY(&pq->inq->entry)) {
+				TAILQ_INSERT_TAIL(&pq->mb_to_clear, &pq->inq->entry, entries);
 			}
 			pq->arb_last_mb = m;
 			/* wait for previous updates in the new mailbox */
-//			smp_mb();
+			mb();
 		}
 	}
 	return m;
@@ -109,10 +105,12 @@ retry:
 	mbf = pspat_mb_extract(m);
 	if (mbf) {
 		/* let pspat_arb_ack() see this mailbox */
-		if (TAILQ_EMPTY(&m->head)) {
-			TAILQ_INSERT_TAIL(&pq->mb_to_clear, &m->list, entries);
-		}
+		TAILQ_INSERT_TAIL(&pq->mb_to_clear, &m->entry, entries);
 	} else  if (unlikely(m->dead)) {
+		/* possibily remove this mb from the ack list */
+		if (!ENTRY_EMPTY(&m->entry)) {
+			TAILQ_REMOVE(&pq->mb_to_clear, &m->entry, entries);
+		}
 		/* the client is gone, the arbiter takes
 		 * responsibility in deleting the mb
 		 */
@@ -127,25 +125,6 @@ pspat_arb_prefetch(struct pspat *arb, struct pspat_queue *pq)
 {
 	if (pq->arb_last_mb != NULL)
 		pspat_mb_prefetch(pq->arb_last_mb);
-}
-
-/* mark mbf as eligible for transmission on an ifnet, and
- * make sure this queue is part of the list of active queues */
-static inline void
-pspat_mark(struct tailhead *active_queues, struct mbuf *mbf)
-{
-	struct ifnet *txq = mbf->ifp;
-
-//	BUG_ON(mbf->next);
-	if (txq->pspat_markq_tail) {
-		txq->pspat_markq_tail->next = mbf;
-	} else {
-		txq->pspat_markq_head = mbf;
-	}
-	txq->pspat_markq_tail = mbf;
-	if (TAILQ_EMPTY(&txq->pspat_active)) {
-		TAILQ_INSERT_TAIL(active_queues, &txq->pspat_active, entries);
-	}
 }
 
 /* move mbf to the a sender queue */
@@ -163,8 +142,8 @@ pspat_arb_dispatch(struct pspat *arb, struct mbuf *mbf)
 		struct pspat_mailbox *cli_mb;
 		struct pspat_queue *pq;
 
-//		BUG_ON(!mbf->sender_cpu);
-//		pq = pspat_arb->queues + mbf->sender_cpu - 1;
+		BUG_ON(!mbf->sender_cpu);
+		pq = pspat_arb->queues + mbf->sender_cpu - 1;
 		cli_mb = pq->arb_last_mb;
 
 		if (cli_mb && !cli_mb->backpressure) {
@@ -182,27 +161,30 @@ pspat_arb_dispatch(struct pspat *arb, struct mbuf *mbf)
 static void
 pspat_arb_ack(struct pspat_queue *pq)
 {
-	struct pspat_mailbox *mb_cursor, *mb_next;
+	struct pspat_mailbox *mb;
+	struct list *mb_entry, *mb_entry_temp;
 
-//	list_for_each_entry_safe(mb_cursor, mb_next, &pq->mb_to_clear, list) {
-		pspat_mb_clear(mb_cursor);
-//		list_del_init(&mb_cursor->list);
-//	}
+	TAILQ_FOREACH_SAFE( mb_entry, &pq->mb_to_clear, entries, mb_entry_temp) {
+		mb = (struct pspat_mailbox *) mb_entry.mb;
+		pspat_mb_clear(mb);
+		TAILQ_REMOVE(&pq->mb_to_clear, mb_entry, entries);
+		ENTRY_INIT(mb_entry);
+	}
 }
 
 /* delete all known dead mailboxes */
 static void
 pspat_arb_delete_dead_mbs(struct pspat *arb)
 {
-	struct pspat_mailbox *mb_cursor, *mb_next;
+	struct pspat_mailbox *mb;
+	struct list *mb_entry, *mb_entry_temp;
 
-//	list_for_each_entry_safe(mb_cursor, mb_next, &arb->mb_to_delete, list) {
-		while (!TAILQ_EMPTY(&mb_cursor->head)) {
-			struct entry *entry1 = TAILQ_FIRST(&mb_cursor->head);
-			TAILQ_REMOVE(&mb_cursor->head, entry1, entries);
-		}
-		pspat_mb_delete(mb_cursor);
-//	}
+	TAILQ_FOREACH_SAFE( mb_entry, &arb->mb_to_delete, entries, mb_entry_temp) {
+		mb = (struct pspat_mailbox *) mb_entry.mb;
+		TAILQ_REMOVE(&arb->mb_to_delete, mb_entry, entries);
+		ENTRY_INIT(mb_entry);
+		pspat_mb_delete(mb);
+	}
 }
 
 static void
@@ -228,64 +210,18 @@ pspat_arb_drain(struct pspat *arb, struct pspat_queue *pq)
 	pspat_arb_backpressure_drop += dropped;
 }
 
-/* Flush the markq associated to a device transmit queue. Returns 0 if all the
- * packets in the markq were transmitted. A non-zero return code means that the
- * markq has not been emptied. */
-static inline int
-pspat_txq_flush(struct ifnet *txq)
-{
-	int ret = NETDEV_TX_BUSY;
-	struct mbuf *mbf;
-
-	/* Validate all the mbfs in the markq. Some (or all) the mbfs may be
-	 * dropped. The function may modify the markq head/tail pointers. */
-//	txq->pspat_markq_head = validate_xmit_mbf_list(txq->pspat_markq_head,
-//						dev, &txq->pspat_markq_tail);
-	/* Append the markq to the validq (handling the case where the validq
-	 * was empty and/or the markq is empty) and reset the markq. */
-	if (txq->pspat_validq_head == NULL) {
-		txq->pspat_validq_head = txq->pspat_markq_head;
-		txq->pspat_validq_tail = txq->pspat_markq_tail;
-	} else if (txq->pspat_markq_head) {
-		txq->pspat_validq_tail->next = txq->pspat_markq_head;
-		txq->pspat_validq_tail = txq->pspat_markq_tail;
-	}
-	txq->pspat_markq_head = txq->pspat_markq_tail = NULL;
-	mbf = txq->pspat_validq_head;
-
-//	HARD_TX_LOCK(dev, txq, smp_processor_id());
-//	if (!netif_xmit_frozen_or_stopped(txq)) {
-//		mbf = dev_hard_start_xmit(mbf, dev, txq, &ret);
-//	}
-//	HARD_TX_UNLOCK(dev, txq);
-
-	/* The mbf pointer here is NULL if all packets were transmitted.
-	 * Otherwise it points to a list of packets to be transmitted. */
-	txq->pspat_validq_head = mbf;
-	if (!mbf) {
-		/* All packets were transmitted, we can just reset
-		 * the validq tail (head was reset above). */
-//		BUG_ON(!dev_xmit_complete(ret));
-		txq->pspat_validq_tail = NULL;
-		return 0;
-	}
-
-	return 1;
-}
-
 static void
-pspat_txqs_flush(struct tailhead *txqs)
+pspat_txqs_flush(struct mbuf *m)
 {
-	struct ifnet *txq, *txq_next;
+	struct mbuf *n;
 
-//	list_for_each_entry_safe(txq, txq_next, txqs, pspat_active) {
-		if (pspat_txq_flush(txq) == 0) {
-//			list_del_init(&txq->pspat_active);
-		}
-//	}
+	for (; m != NULL; m = n) {
+		struct ifnet *ifp = m->ifp;
+		n = m->m_nextpkt;
+		m->m_nextpkt = NULL;
+		ether_output_frame(ifp, m);
+	}
 }
-
-#define PSPAT_ARB_STATS_LOOPS	0x1000
 
 /* Function implementing the arbiter. */
 int
@@ -295,9 +231,11 @@ pspat_do_arbiter(struct pspat *arb)
 	struct timespec ts;
 	nanotime(&ts);
 	u64 now = ts->tv_nsec << 10, picos;
+	u64 link_idle;
 	static u64 last_pspat_rate = 0;
 	static u64 picos_per_byte = 1;
 	unsigned int nreqs = 0;
+
 	/* number of empty client lists found in the last round
 	 * (after a round with only empty CLs, we can safely
 	 * delete the mbs in the mb_to_delete list)
@@ -312,16 +250,12 @@ pspat_do_arbiter(struct pspat *arb)
 		picos_per_byte = (8 * (NSEC_PER_SEC << 10)) / last_pspat_rate;
 	}
 
-//	rcu_read_lock_bh();
-
 	/*
-	 * bring in pending packets, arrived between pspat_next_link_idle
+	 * bring in pending packets, arrived between link_idle
 	 * and now (we assume they arrived at last_check)
 	 */
-
 	for (i = 0; i < arb->n_queues; i++) {
 		struct pspat_queue *pq = arb->queues + i;
-		struct mbuf *to_free = NULL;
 		struct mbuf *mbf;
 		bool empty = true;
 
@@ -333,13 +267,11 @@ pspat_do_arbiter(struct pspat *arb)
 		pspat_arb_prefetch(arb, (i + 1 < arb->n_queues ? pq + 1 : arb->queues));
 
 		while ( (mbf = pspat_arb_get_mbf(arb, pq)) ) {
-			int rc;
+			pspat_arb_dispatch(arb, mbf);
 
 			empty = false;
 			++nreqs;
-
-			/* ToDo : */
-
+		}
 
 		if (empty) {
 			++empty_inqs;
@@ -352,52 +284,23 @@ pspat_do_arbiter(struct pspat *arb)
 		struct pspat_queue *pq = arb->queues + i;
 		pspat_arb_ack(pq);     /* to clients */
 	}
-//	for (q = arb->qdiscs; q; q = q->pspat_next) {
-//		u64 next_link_idle = q->pspat_next_link_idle;
-		unsigned int ndeq = 0;
-
-		while (next_link_idle <= now &&
-			ndeq < pspat_arb_qdisc_batch)
-		{
-			struct mbuf *mbf = q->dequeue(q);
-
-			if (mbf == NULL)
-				break;
-			ndeq++;
-			if (unlikely(pspat_debug_xmit)) {
-				printf("deq(%p)-->%p\n", q, mbf);
-			}
-			next_link_idle += picos_per_byte * mbf->len;
-
-			switch (pspat_xmit_mode) {
-			case PSPAT_XMIT_MODE_ARB:
-				pspat_mark(&arb->active_txqs, mbf);
-				break;
-			case PSPAT_XMIT_MODE_DISPATCH:
-				pspat_arb_dispatch(arb, mbf);
-				break;
-			default:
-				m_free(mbf);
-				break;
-			}
-		}
-		pspat_arb_tc_deq += ndeq;
-
-                /* If the traffic on this root qdisc is not enough to fill
-                 * the link bandwidth, we need to move next_link_idle
-                 * forward, in order to avoid accumulating credits. */
-                if (next_link_idle <= now &&
-			ndeq < pspat_arb_qdisc_batch) {
-                    next_link_idle = now;
-                }
-//		q->pspat_next_link_idle = next_link_idle;
-//	}
 
 	if (pspat_xmit_mode == PSPAT_XMIT_MODE_ARB) {
-		pspat_txqs_flush(&arb->active_txqs);
-	}
+		unsigned int ndeq = 0;
 
-//	rcu_read_unlock_bh();
+		struct pspat_mailbox *m = arb->dispatchers[0]->mb;
+		struct mbuf *mbf;
+
+		while (link_idle < now && ndeq < pspat_arb_batch) {
+			if (mbf = pspat_mb_extract(m) != NULL) {
+				link_idle += picos_per_byte * mbf->m_len;
+				pspat_txqs_flush(mbuf);
+				ndeq ++;
+			} else {
+				link_idle = now;
+			}
+		}
+	}
 
 	/* Update statistics on avg/max cost of the arbiter loop and
 	 * per-loop client mailbox processing. */
@@ -441,28 +344,6 @@ pspat_shutdown(struct pspat *arb)
 		}
 	}
 	printf("%s: CMs drained, found %d mbfs\n", __func__, n);
-
-	/* Also drain the validq of all the active tx queues. */
-	n = 0;
-//	list_for_each_entry_safe(txq, txq_next, &arb->active_txqs, pspat_active) {
-		/* We can't call kfree_mbf_list(), because this function does
-		 * not unlink the mbfuffs from the list.
-		 * Unlinking is important in case the refcount of some of the
-		 * mbfuffs does not go to zero here, that would mean possible
-		 * dangling pointers. */
-		while (txq->pspat_validq_head != NULL) {
-			struct mbuf *next = txq->pspat_validq_head->next;
-			txq->pspat_validq_head->next = NULL;
-			m_free(txq->pspat_validq_head);
-			txq->pspat_validq_head = next;
-			n ++;
-		}
-		txq->pspat_validq_tail = NULL;
-//		list_del_init(&txq->pspat_active);
-		BUG_ON(txq->pspat_markq_head != NULL ||
-			txq->pspat_markq_tail != NULL);
-//	}
-	printf("%s: Arbiter validq lists drained, found %d mbfs\n", __func__, n);
 }
 
 int
@@ -472,14 +353,19 @@ pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
 	struct pspat_queue *pq;
 	struct pspat *arb;
 
-	mbuf->ifp = ifp;
+	rw_wlock(pspat_rwlock);
+	arb = pspat_arb;
+	rw_wunlock(pspat_rwlock);
 
-	if (!pspat_enable || arb = pspat_arb == NULL) {
+	if (!pspat_enable || arb == NULL) {
 		/* Not our business. */
 		return -ENOTTY;
 	}
 
 	cpu = curthread->td_oncpu;
+	mbuf->sender_cpu = cpu;
+	mbuf->ifp = ifp;
+
 	pq = arb->queues + cpu;
 	if (pspat_cli_push(pq, mbf)) {
 		pspat_stats[cpu].inq_drop++;
@@ -491,7 +377,7 @@ pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
 	return rc;
 }
 
-/* Called on process exit() to clean-up PSPAT mailbox, if any. */
+/* Called on thread exit() to clean-up PSPAT mailbox, if any. */
 void
 exit_pspat(void)
 {
@@ -505,7 +391,7 @@ exit_pspat(void)
 	curthread->pspat_mb->dead = 1;
 
 retry:
-//	rcu_read_lock();
+	rw_wlock(pspat_rwlock);
 	arb = pspat_arb;
 	if (arb) {
 		/* If the arbiter is running, we cannot delete the mailbox
@@ -518,7 +404,7 @@ retry:
 			curthread->pspat_mb = NULL;
 		}
 	}
-//	rcu_read_unlock();
+	rw_wunlock(pspat_rwlock);
 	if (curthread->pspat_mb) {
 		/* the mailbox is still there */
 		if (arb) {
@@ -526,9 +412,7 @@ retry:
 			 * arbiter was running. We must try again.
 			 */
 			printf("PSPAT Try again to destroy mailbox\n");
-//			set_current_state(TASK_INTERRUPTIBLE);
-//			schedule_timeout(100);
-			kthread_suspend(curthread, 0);
+			pause("Wait before retrying", 100);
 			goto retry;
 		} else {
 			/* The arbiter is not running. Since
@@ -551,20 +435,15 @@ pspat_do_dispatcher(struct pspat_dispatcher *s)
 	int ndeq = 0;
 
 	while (ndeq < pspat_dispatch_batch && (mbf = pspat_mb_extract(m)) != NULL) {
-		pspat_mark(&s->active_txqs, mbf);
+		pspat_txqs_flush(mbuf);
 		ndeq ++;
 	}
 
 	pspat_dispatch_deq += ndeq;
 	pspat_mb_clear(m);
-	pspat_txqs_flush(&s->active_txqs);
 
 	if (unlikely(pspat_debug_xmit && ndeq)) {
 		printf("PSPAT sender processed %d mbfs\n", ndeq);
-	}
-
-	if (pspat_dispatch_sleep_us) {
-//		usleep_range(pspat_dispatch_sleep_us, pspat_dispatch_sleep_us);
 	}
 
 	return ndeq;
@@ -582,26 +461,4 @@ pspat_dispatcher_shutdown(struct pspat_dispatcher *s)
 		n ++;
 	}
 	printf("%s: Sender MB drained, found %d mbfs\n", __func__, n);
-
-	/* Also drain the validq of all the active tx queues. */
-	n = 0;
-//	list_for_each_entry_safe(txq, txq_next, &s->active_txqs, pspat_active) {
-		/* We can't call kfree_mbf_list(), because this function does
-		 * not unlink the mbfuffs from the list.
-		 * Unlinking is important in case the refcount of some of the
-		 * mbfuffs does not go to zero here, that would mean possible
-		 * dangling pointers. */
-		while (txq->pspat_validq_head != NULL) {
-			struct mbuf *next = txq->pspat_validq_head->next;
-			txq->pspat_validq_head->next = NULL;
-			m_free(txq->pspat_validq_head);
-			txq->pspat_validq_head = next;
-			n ++;
-		}
-		txq->pspat_validq_tail = NULL;
-//		list_del_init(&txq->pspat_active);
-		BUG_ON(txq->pspat_markq_head != NULL ||
-			txq->pspat_markq_tail != NULL);
-//	}
-	printf("%s: Sender validq lists drained, found %d mbfs\n", __func__, n);
 }

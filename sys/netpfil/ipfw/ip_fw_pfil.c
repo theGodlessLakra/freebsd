@@ -115,11 +115,6 @@ SYSEND
 
 #endif /* SYSCTL_NODE */
 
-#ifdef CONFIG_PSPAT
-extern int pspat_enable;
-extern int pspat_client_handler(struct mbuf *mbf, struct ifnet *ifp);
-#endif
-
 /*
  * The pfilter hook to pass packets to ipfw_chk and then to
  * dummynet, divert, netgraph or other modules.
@@ -242,13 +237,6 @@ again:
 
 	case IP_FW_DUMMYNET:
 		ret = EACCES;
-#ifdef CONFIG_PSPAT
-		if (pspat_enable) {
-			ret = pspat_client_handler(m0, ifp);
-			if (rc != -ENOTTY)
-				break;
-		}
-#endif
 		if (ip_dn_io_ptr == NULL)
 			break; /* i.e. drop */
 		if (mtod(*m0, struct ip *)->ip_v == 4)

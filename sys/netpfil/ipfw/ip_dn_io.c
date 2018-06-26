@@ -90,6 +90,11 @@ static long tick_diff;
 static unsigned long	io_pkt;
 static unsigned long	io_pkt_fast;
 
+#ifdef CONFIG_PSPAT
+extern int pspat_enable;
+extern int pspat_client_handler(struct mbuf *mbf, struct ifnet *ifp);
+#endif
+
 #ifdef NEW_AQM
 unsigned long	io_pkt_drop;
 #else
@@ -863,6 +868,13 @@ tag_mbuf(struct mbuf *m, int dir, struct ip_fw_args *fwa)
 int
 dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 {
+#ifdef CONFIG_PSPAT
+		if (pspat_enable && dir == (DIR_OUT | PROTO_LAYER2)) {
+			ret = pspat_client_handler(*m0, fwa->oif);
+			return ret;
+		}
+#endif
+
 	struct mbuf *m = *m0;
 	struct dn_fsk *fs = NULL;
 	struct dn_sch_inst *si;

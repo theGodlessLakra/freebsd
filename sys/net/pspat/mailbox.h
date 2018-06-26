@@ -6,22 +6,26 @@
 #include <sys/param.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
-
 #endif /* _KERNEL */
 
 #define PSPAT_MB_NAMSZ	32
-
 #define PSPAT_MB_DEBUG 1
 
-#define is_power_of_2(x)	((x) != 0 && (((x) & ((x) - 1)) == 0))
+#define ENTRY_EMPTY (entry) ((entry->tqe_next == NULL) && (*entry->tqe_prev == NULL))
 
-MALLOC_DECLARE(M_MB);
-
-struct entry {
-	TAILQ_ENTRY(entry)	entries;
+struct list {
+	TAILQ_ENTRY(list)	entries;
+	void *mb; /* Pointer to store address of the containing mailbox */
 };
 
-extern struct tailhead;
+static inline void ENTRY_INIT (struct list *entry) {
+	*entry->tqe_prev = NULL;
+	entry->tqe_next = NULL;
+}
+
+TAILQ_HEAD(entry_list, list);
+
+MALLOC_DECLARE(M_MB);
 
 struct pspat_mailbox {
 	/* shared (constant) fields */
@@ -43,8 +47,7 @@ struct pspat_mailbox {
 	unsigned long		cons_clear __aligned(CACHE_LINE_SIZE);
 	unsigned long		cons_read;
 
-	struct entry list;
-	TAILQ_HEAD(tailhead, entry) head = TAILQ_HEAD_INITIALIZER(head);
+	struct list entry;
 
 	/* the queue */
 	void *		q[0] __aligned(CACHE_LINE_SIZE);
@@ -67,7 +70,6 @@ static inline size_t pspat_mb_size(unsigned long entries)
  */
 int pspat_mb_new(const char *name, unsigned long entries,
 		unsigned long line_size, struct pspat_mailbox **m);
-
 
 /**
  * pspat_mb_init - initialize a pre-allocated mailbox
@@ -123,15 +125,11 @@ static inline int pspat_mb_insert(struct pspat_mailbox *m, void *v)
 static inline void *pspat_mb_extract(struct pspat_mailbox *m)
 {
 	void *v = m->q[m->cons_read & m->entry_mask];
-
 	if (!v)
 		return NULL;
-
 	m->cons_read++;
-
 	return v;
 }
-
 
 /**
  * pspat_mb_clear - clear the previously extracted entries
@@ -147,13 +145,6 @@ static inline void pspat_mb_clear(struct pspat_mailbox *m)
 		m->cons_clear++;
 	}
 }
-
-/**
- * pspat_mb_cancel - remove from the mailbox all instances of a value
- * @m: the mailbox
- * @v: the value to be removed
- */
-void pspat_mb_cancel(struct pspat_mailbox *m, void *v);
 
 static inline void pspat_mb_prefetch(struct pspat_mailbox *m)
 {
