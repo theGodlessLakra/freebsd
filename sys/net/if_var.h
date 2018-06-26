@@ -233,7 +233,6 @@ typedef int (if_snd_tag_modify_t)(struct m_snd_tag *, union if_snd_tag_modify_pa
 typedef int (if_snd_tag_query_t)(struct m_snd_tag *, union if_snd_tag_query_params *);
 typedef void (if_snd_tag_free_t)(struct m_snd_tag *);
 
-
 /*
  * Structure defining a network interface.
  */
