@@ -472,9 +472,9 @@ static int pspat_module_handler(struct module *module, int event, void *arg) {
 }
 
 static moduledata_t pspat_data = {
-    "pspat_main",
+    "pspat",
      pspat_module_handler,
      NULL
 };
 
-DECLARE_MODULE(pspat_main, pspat_data, SI_SUB_DRIVERS, SI_ORDER_MIDDLE);
+DECLARE_MODULE(pspat, pspat_data, SI_SUB_DRIVERS, SI_ORDER_MIDDLE);

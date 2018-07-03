@@ -312,6 +312,7 @@ SUBDIR=	\
 	procfs \
 	proto \
 	pseudofs \
+	pspat\
 	${_pst} \
 	pty  \
 	puc \
