@@ -1,6 +1,7 @@
 #ifndef __PSPAT_H__
 #define __PSPAT_H__
 
+#include <sys/systm.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/mbuf.h>

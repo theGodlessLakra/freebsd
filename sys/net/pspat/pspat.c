@@ -418,7 +418,7 @@ fail:
 	return ret;
 }
 
-static int __init
+static int
 pspat_init(void)
 {
 	int ret;
@@ -445,7 +445,7 @@ err1:
 	return ret;
 }
 
-static void __exit
+static void
 pspat_fini(void)
 {
 	pspat_destroy();
@@ -454,10 +454,27 @@ pspat_fini(void)
 	mtx_destroy(&pspat_glock);
 }
 
-module_init(pspat_init);
-module_exit(pspat_fini);
+static int pspat_module_handler(struct module *module, int event, void *arg) {
+        int err = 0;
 
-MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Giuseppe Lettieri <g.lettieri@iet.unipi.it");
-MODULE_AUTHOR("Vincenzo Maffione <v.maffione@gmail.com>");
-MODULE_AUTHOR("Luigi Rizzo <rizzo@iet.unipi.it>");
+        switch (event) {
+	        case MOD_LOAD:
+	                pspat_init();
+	                break;
+	        case MOD_UNLOAD:
+	                pspat_fini();
+	                break;
+	        default:
+	                err = EOPNOTSUPP;
+	                break;
+        }
+        return err;
+}
+
+static moduledata_t pspat_data = {
+    "pspat_main",
+     pspat_module_handler,
+     NULL
+};
+
+DECLARE_MODULE(pspat_main, pspat_data, SI_SUB_DRIVERS, SI_ORDER_MIDDLE);
