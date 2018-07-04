@@ -1,8 +1,8 @@
 #ifndef __PSPAT_MAILBOX_H
 #define __PSPAT_MAILBOX_H
 
-#include <sys/kernel.h>
 #include <sys/param.h>
+#include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
 
