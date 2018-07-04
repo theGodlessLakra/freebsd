@@ -24,10 +24,10 @@ struct pspat_queue {
 	struct pspat_mailbox   *inq;
 
 	/* client fields */
-	u64			cli_last_mb __aligned(CACHE_LINE_SIZE);
+	unsigned long		cli_last_mb __aligned(CACHE_LINE_SIZE);
 
 	/* arbiter fields */
-	u64			arb_extract_next __aligned(CACHE_LINE_SIZE);
+	unsigned long		arb_extract_next __aligned(CACHE_LINE_SIZE);
 	struct pspat_mailbox   *arb_last_mb;
 	struct entry_list mb_to_clear;
 };
@@ -48,9 +48,9 @@ struct pspat {
 	/* Statistics to evaluate the cost of an arbiter loop. */
 	unsigned int		num_loops;
 	unsigned int		num_reqs;
-	u64			max_picos;
-	u64			num_picos;
-	u64			last_ts;
+	unsigned long		max_picos;
+	unsigned long		num_picos;
+	unsigned long		last_ts;
 
 	/* mailboxes between the arbiter and the dispatchers
 	 * (used with PSPAT_XMIT_MODE_DISPATCH) */
@@ -63,7 +63,7 @@ struct pspat {
 
 extern struct pspat *pspat_arb;
 
-extern static struct rwlock pspat_rwlock;
+extern struct rwlock pspat_rwlock;
 
 int pspat_do_arbiter(struct pspat *arb);
 
@@ -77,21 +77,23 @@ void pspat_dispatcher_shutdown(struct pspat_dispatcher *s);
 
 int pspat_create_client_queue(void);
 
+void exit_pspat(void);
+
 extern int pspat_enable;
 extern int pspat_debug_xmit;
 #define PSPAT_XMIT_MODE_ARB		0 /* packets sent by the arbiter */
 #define PSPAT_XMIT_MODE_DISPATCH	1 /* packets sent by dispatcher */
 #define PSPAT_XMIT_MODE_MAX		2 /* packets dropped by the arbiter */
 extern int pspat_xmit_mode;
-extern u64 pspat_rate;
-extern u64 pspat_arb_interval_ns;
-extern u64 pspat_arb_backpressure_drop;
-extern u64 pspat_arb_dispatch_drop;
-extern u64 pspat_dispatch_deq;
-extern u64 *pspat_rounds;
-extern u64 pspat_arb_loop_avg_ns;
-extern u64 pspat_arb_loop_max_ns;
-extern u64 pspat_arb_loop_avg_reqs;
+extern unsigned long pspat_rate;
+extern unsigned long pspat_arb_interval_ns;
+extern unsigned long pspat_arb_backpressure_drop;
+extern unsigned long pspat_arb_dispatch_drop;
+extern unsigned long pspat_dispatch_deq;
+extern unsigned long *pspat_rounds;
+extern unsigned long pspat_arb_loop_avg_ns;
+extern unsigned long pspat_arb_loop_max_ns;
+extern unsigned long pspat_arb_loop_avg_reqs;
 extern uint32_t pspat_arb_batch;
 extern uint32_t pspat_dispatch_batch;
 extern struct pspat_stats *pspat_stats;

@@ -501,9 +501,9 @@ thread_cow_update(struct thread *td)
 		lim_free(oldlimit);
 }
 
-#ifdef CONFIG_PSPAT
+//#ifdef CONFIG_PSPAT
 extern void exit_pspat(void);
-#endif
+//#endif
 
 /*
  * Discard the current thread and exit from its context.
@@ -536,9 +536,9 @@ thread_exit(void)
 	SDT_PROBE0(proc, , , lwp__exit);
 	KASSERT(TAILQ_EMPTY(&td->td_sigqueue.sq_list), ("signal pending"));
 
-#ifdef CONFIG_PSPAT
+//#ifdef CONFIG_PSPAT
 	exit_pspat();
-#endif
+//#endif
 
 #ifdef AUDIT
 	AUDIT_SYSCALL_EXIT(0, td);

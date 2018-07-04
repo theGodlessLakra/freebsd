@@ -1,6 +1,8 @@
-#include <sys/mutex.h>
+#include <sys/param.h>
 #include <sys/lock.h>
+#include <sys/mutex.h>
 #include <sys/systm.h>
+#include <sys/module.h>
 #include <sys/sysctl.h>
 #include <sys/smp.h>
 
@@ -20,19 +22,19 @@ int pspat_debug_xmit __read_mostly = 0;
 int pspat_xmit_mode __read_mostly = PSPAT_XMIT_MODE_ARB;
 int arb_thread_stop __read_mostly = 0;
 int snd_thread_stop __read_mostly = 0;
-u64 pspat_rate __read_mostly = 40000000000; // 40Gb/s
-u64 pspat_arb_interval_ns __read_mostly = 1000;
-u32 pspat_arb_batch __read_mostly = 512;
-u32 pspat_dispatch_batch __read_mostly = 256;
-u64 pspat_arb_backpressure_drop = 0;
-u64 pspat_arb_dispatch_drop = 0;
-u64 pspat_dispatch_deq = 0;
-u64 pspat_arb_loop_avg_ns = 0;
-u64 pspat_arb_loop_max_ns = 0;
-u64 pspat_arb_loop_avg_reqs = 0;
-u64 pspat_mailbox_entries = 512;
-u64 pspat_mailbox_line_size = 128;
-u64 *pspat_rounds; /* currently unused */
+unsigned long pspat_rate __read_mostly = 40000000000; // 40Gb/s
+unsigned long pspat_arb_interval_ns __read_mostly = 1000;
+unsigned int pspat_arb_batch __read_mostly = 512;
+unsigned int pspat_dispatch_batch __read_mostly = 256;
+unsigned long pspat_arb_backpressure_drop = 0;
+unsigned long pspat_arb_dispatch_drop = 0;
+unsigned long pspat_dispatch_deq = 0;
+unsigned long pspat_arb_loop_avg_ns = 0;
+unsigned long pspat_arb_loop_max_ns = 0;
+unsigned long pspat_arb_loop_avg_reqs = 0;
+unsigned long pspat_mailbox_entries = 512;
+unsigned long pspat_mailbox_line_size = 128;
+unsigned long *pspat_rounds; /* currently unused */
 static unsigned long pspat_pages;
 
 static struct mtx pspat_glock;
@@ -47,7 +49,7 @@ pspat_enable_oid_handler(struct sysctl_oid *oidp, void *arg1,
 {
 	int ret = orig_oid_hanlder(oidp, arg1, arg2, req);
 
-	if (ret || !write || !pspat_enable || !arbp) {
+	if (ret || !pspat_enable || !arbp) {
 		return ret;
 	}
 
@@ -63,7 +65,7 @@ pspat_xmit_mode_oid_handler(struct sysctl_oid *oidp, void *arg1,
 {
 	int ret = orig_oid_hanlder(oidp, arg1, arg2, req);
 
-	if (ret || !write || !pspat_enable || !arbp
+	if (ret || !pspat_enable || !arbp
 			|| pspat_xmit_mode != PSPAT_XMIT_MODE_DISPATCH) {
 		return ret;
 	}
@@ -86,18 +88,18 @@ pspat_sysctl_init(void)
 
 	struct sysctl_oid *pspat_oid;
 	struct sysctl_oid *pspat_cpu_oid;
-	struct sysctl_oid *oidp;
+	struct sysctl_oid *oidp, *t;
 
 	pspat_stats = (struct pspat_stats*)malloc(PAGE_SIZE, M_PSPAT, M_WAITOK | M_ZERO); // XXX max 4096/32 cpus
 	if (pspat_stats == NULL) {
-		printf(KERN_WARNING "pspat: unable to allocate stats page");
+		printf("pspat: unable to allocate stats page");
 		goto out;
 	}
 
-	size = (cpus + 1) * sizeof(u64);
+	size = (cpus + 1) * sizeof(unsigned long);
 	pspat_rounds = malloc(size, M_PSPAT, M_WAITOK);
 	if (pspat_rounds == NULL) {
-		printf(KERN_WARNING "pspat: unable to allocate rounds counter array\n");
+		printf("pspat: unable to allocate rounds counter array\n");
 		goto free_stats;
 	}
 
@@ -131,7 +133,7 @@ pspat_sysctl_init(void)
 	    OID_AUTO, "arb_interval_ns", CTLFLAG_RW, &pspat_arb_interval_ns, 1000,
 	    "arb_interval_ns under pspat");
 
-	oidp = SYSCTL_ADD_32(&clist, SYSCTL_CHILDREN(pspat_oid),
+	oidp = SYSCTL_ADD_U32(&clist, SYSCTL_CHILDREN(pspat_oid),
 	    OID_AUTO, "dispatch_batch", CTLFLAG_RW, &pspat_dispatch_batch, 256,
 	    "dispatch_batch under pspat");
 
@@ -174,7 +176,7 @@ pspat_sysctl_init(void)
 	size = cpus * 16;  /* space for the syctl names */
 	buf = malloc(size, M_PSPAT, M_WAITOK);
 	if (buf == NULL) { 
-		printf(KERN_WARNING "pspat: not enough space for per-cpu sysctl names");
+		printf("pspat: not enough space for per-cpu sysctl names");
 		goto free_rounds;
 	}
 
@@ -224,9 +226,9 @@ arb_worker_func(void *data)
                                  * registered: we need to unregister. */
 				mtx_lock(&pspat_glock);
 				pspat_shutdown(arb);
-				rw_wlock(pspat_rwlock);
+				rw_wlock(&pspat_rwlock);
 				pspat_arb = NULL;
-				rw_wunlock(pspat_rwlock);
+				rw_wunlock(&pspat_rwlock);
 				mtx_unlock(&pspat_glock);
 				arb_registered = false;
 				printf("PSPAT arbiter unregistered\n");
@@ -239,14 +241,14 @@ arb_worker_func(void *data)
 				/* PSPAT is enabled but arbiter is not
                                  * registered: we need to register. */
 				mtx_lock(&pspat_glock);
-				rw_wlock(pspat_rwlock);
+				rw_wlock(&pspat_rwlock);
 				pspat_arb = arb;
-				rw_wunlock(pspat_rwlock);
+				rw_wunlock(&pspat_rwlock);
 				mtx_unlock(&pspat_glock);
 				arb_registered = true;
 				printf("PSPAT arbiter registered\n");
 				nanotime(&ts);
-				arb->last_ts = ts->tv_nsec << 10;
+				arb->last_ts = ts.tv_nsec << 10;
 				arb->num_loops = 0;
 				arb->num_picos = 0;
 				arb->max_picos = 0;
@@ -283,11 +285,11 @@ static int
 pspat_destroy(void)
 {
 	mtx_lock(&pspat_glock);
-	BUG_ON(arbp == NULL);
+//	BUG_ON(arbp == NULL);
 
-	rw_wlock(pspat_rwlock);
+	rw_wlock(&pspat_rwlock);
 	pspat_arb = NULL;
-	rw_wunlock(pspat_rwlock);
+	rw_wunlock(&pspat_rwlock);
 
 	if (arbp->arb_thread) {
 		arb_thread_stop = 1;
@@ -346,14 +348,14 @@ pspat_create(void)
 	mb_size = pspat_mb_size(mb_entries);
 
 	mtx_lock(&pspat_glock);
-	BUG_ON(arbp != NULL);
+//	BUG_ON(arbp != NULL);
 
 	arb_size = roundup(sizeof(*arbp) + cpus * sizeof(*arbp->queues),
 				CACHE_LINE_SIZE);
 	pspat_pages = DIV_ROUND_UP(arb_size + mb_size * (cpus + dispatchers),
 				PAGE_SIZE);
 
-	arbp = (struct pspat *)malloc(order_base_2(pspat_pages), M_PSPAT, M_WAITOK | M_ZERO);
+	arbp = (struct pspat *)malloc(pspat_pages, M_PSPAT, M_WAITOK | M_ZERO);
 	if (!arbp) {
 		mtx_unlock(&pspat_glock);
 		return -ENOMEM;
@@ -362,7 +364,7 @@ pspat_create(void)
 	arbp->n_queues = cpus;
 
 	/* initialize all mailboxes */
-	m = (void *)arbp + arb_size;
+	m = (struct pspat_mailbox *) ((char *)arbp + arb_size);
 	for (i = 0; i < cpus; i++) {
 		char name[PSPAT_MB_NAMSZ];
 		snprintf(name, PSPAT_MB_NAMSZ, "CL-%d", i);
@@ -372,7 +374,7 @@ pspat_create(void)
 		}
 		arbp->queues[i].inq = m;
 		TAILQ_INIT(&arbp->queues[i].mb_to_clear);
-		m = (void *)m + mb_size;
+		m = (struct pspat_mailbox *) ((char *)m + mb_size);
 	}
 	TAILQ_INIT(&arbp->mb_to_delete);
 
@@ -384,7 +386,7 @@ pspat_create(void)
 			goto fail;
 		}
 		arbp->dispatchers[i].mb = m;
-		m = (void *)m + mb_size;
+		m = (struct pspat_mailbox *) ((char *)m + mb_size);
 	}
 
 	ret = kthread_add(arb_worker_func, arbp, NULL,
@@ -424,7 +426,7 @@ pspat_init(void)
 	int ret;
 
 	mtx_init(&pspat_glock, "pspat_glock", NULL, MTX_DEF);
-	rw_init(pspat_rwlock,	"pspat_rwlock");
+	rw_init(&pspat_rwlock,	"pspat_rwlock");
 
 	ret = pspat_sysctl_init();
 	if (ret) {
@@ -450,7 +452,7 @@ pspat_fini(void)
 {
 	pspat_destroy();
 	pspat_sysctl_fini();
-	rw_destroy(pspat_rwlock);
+	rw_destroy(&pspat_rwlock);
 	mtx_destroy(&pspat_glock);
 }
 

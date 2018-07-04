@@ -1,17 +1,15 @@
 #ifndef __PSPAT_MAILBOX_H
 #define __PSPAT_MAILBOX_H
 
-#ifdef _KERNEL
 #include <sys/kernel.h>
 #include <sys/param.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
-#endif /* _KERNEL */
 
 #define PSPAT_MB_NAMSZ	32
 #define PSPAT_MB_DEBUG 1
 
-#define ENTRY_EMPTY (entry) ((entry->tqe_next == NULL) && (*entry->tqe_prev == NULL))
+#define ENTRY_EMPTY(entry) (((&entry)->entries.tqe_next == NULL) && (*((&entry)->entries.tqe_prev) == NULL))
 
 struct list {
 	TAILQ_ENTRY(list)	entries;
@@ -19,8 +17,8 @@ struct list {
 };
 
 static inline void ENTRY_INIT (struct list *entry) {
-	*entry->tqe_prev = NULL;
-	entry->tqe_next = NULL;
+	*entry->entries.tqe_prev = NULL;
+	entry->entries.tqe_next = NULL;
 }
 
 TAILQ_HEAD(entry_list, list);
@@ -37,7 +35,7 @@ struct pspat_mailbox {
 	/* shared field, written by both */
 	unsigned long		backpressure;
 	int			dead; /* written by producer */
-	u64			identifier;
+	unsigned int		identifier;
 
 	/* producer fields */
 	unsigned long		prod_write __aligned(CACHE_LINE_SIZE);
@@ -101,14 +99,15 @@ void pspat_mb_dump_state(struct pspat_mailbox *m);
  */
 static inline int pspat_mb_insert(struct pspat_mailbox *m, void *v)
 {
-	if (unlikely(m->prod_write == m->prod_check)) {
+	void *h = &m->q[m->prod_write & m->entry_mask];
+	if (m->prod_write == m->prod_check) {
 		/* Leave a cache line empty. */
 		if (m->q[(m->prod_check + m->line_entries) & m->entry_mask])
 			return -ENOBUFS;
 		m->prod_check += m->line_entries;
-		__builtin_prefetch(h + m->line_entries);
+		__builtin_prefetch((char *)h + m->line_entries);
 	}
-	BUG_ON(((void *)v) & 0x1);
+//	BUG_ON(((void *)v) & 0x1);
 	m->q[m->prod_write & m->entry_mask] = v;
 	m->prod_write++;
 	return 0;

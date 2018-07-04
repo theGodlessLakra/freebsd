@@ -288,10 +288,10 @@ struct mbuf {
 		};
 		char	m_dat[0];			/* !M_PKTHDR, !M_EXT */
 	};
-#ifdef CONFIG_PSPAT
+//#ifdef CONFIG_PSPAT
 	struct ifnet *ifp;
 	int sender_cpu;
-#endif
+//#endif
 };
 
 /*
