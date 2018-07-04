@@ -14,7 +14,7 @@ pspat_mb_new(const char *name, unsigned long entries, unsigned long line_size,
 	if (*m == NULL)
 		return -ENOMEM;
 
-	err = pspat_mb_init(m, name, entries, line_size);
+	err = pspat_mb_init(*m, name, entries, line_size);
 	if (err) {
 		free(*m, M_MB);
 		return err;
@@ -33,7 +33,7 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 			entries * sizeof(void *) <= 2 * line_size || line_size < sizeof(void *))
 		return -EINVAL;
 
-	strncpy(m->name, name, PSPAT_MB_NAMSZ);
+//	strncpy(m->name, name, PSPAT_MB_NAMSZ);
 	m->name[PSPAT_MB_NAMSZ - 1 ] = '\0';
 
 	entries_per_line = line_size / sizeof(void *);
@@ -55,7 +55,7 @@ pspat_mb_init(struct pspat_mailbox *m, const char *name,
 	unsigned initial_clear = m->cons_clear;
 	/* Fill the first cacheline with a garbage value */
 	while(initial_clear != m->cons_read) {
-		m->q[initial_clear & m->entry_mask] = 0x1;
+		m->q[initial_clear & m->entry_mask] = (void *)0x1;
 		initial_clear++;
 	}
 

@@ -233,7 +233,7 @@ pspat_do_arbiter(struct pspat *arb)
 	struct timespec ts;
 	nanotime(&ts);
 	unsigned long now = ts.tv_nsec << 10, picos;
-	unsigned long link_idle;
+	unsigned long link_idle = 0;
 	static unsigned long last_pspat_rate = 0;
 	static unsigned long picos_per_byte = 1;
 	unsigned int nreqs = 0;
