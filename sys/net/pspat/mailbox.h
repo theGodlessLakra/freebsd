@@ -114,6 +114,18 @@ static inline int pspat_mb_insert(struct pspat_mailbox *m, void *v)
 }
 
 /**
+ * pspat_mb_empty - test for an empty mailbox
+ * @m: the mailbox to test
+ *
+ * Returns non-zero if the mailbox is empty
+ */
+static inline int pspat_mb_empty(struct pspat_mailbox *m)
+{
+	void *v = m->q[m->cons_read & m->entry_mask];
+	return (!v);
+}
+
+/**
  * pspat_mb_extract - extract a value
  * @m: the mailbox where to extract from
  * 
