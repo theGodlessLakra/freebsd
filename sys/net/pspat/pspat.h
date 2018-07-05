@@ -8,6 +8,7 @@
 #include <sys/kthread.h>
 #include <sys/types.h>
 #include <sys/proc.h>
+#include <sys/lock.h>
 #include <sys/rwlock.h>
 #include <net/if.h>
 #include <net/if_var.h>
@@ -77,7 +78,7 @@ void pspat_dispatcher_shutdown(struct pspat_dispatcher *s);
 
 int pspat_create_client_queue(void);
 
-void exit_pspat(void);
+extern void exit_pspat(void);
 
 extern int pspat_enable;
 extern int pspat_debug_xmit;

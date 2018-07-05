@@ -38,6 +38,7 @@ unsigned long *pspat_rounds; /* currently unused */
 static unsigned long pspat_pages;
 
 static struct mtx pspat_glock;
+struct rwlock pspat_rwlock;
 static struct sysctl_ctx_list clist;
 
 int (*orig_oid_hanlder)(SYSCTL_HANDLER_ARGS);
