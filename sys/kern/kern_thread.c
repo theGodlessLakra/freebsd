@@ -537,7 +537,7 @@ thread_exit(void)
 	KASSERT(TAILQ_EMPTY(&td->td_sigqueue.sq_list), ("signal pending"));
 
 //#ifdef CONFIG_PSPAT
-	exit_pspat();
+//	exit_pspat();
 //#endif
 
 #ifdef AUDIT

@@ -5,8 +5,18 @@
 #include "mailbox.h"
 #include "pspat.h"
 
+#include <sys/socket.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/if_types.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip_var.h>
+
 #define	NSEC_PER_SEC	1000000000L
 #define	PSPAT_ARB_STATS_LOOPS	0x1000
+
+extern int pspat_enable;
 
 /* Pseudo-identifier for client mailboxes. It's used by pspat_cli_push()
  * to decide when to insert an entry in the CL. Way safer than the previous
@@ -48,7 +58,6 @@ pspat_cli_push(struct pspat_queue *pq, struct mbuf *mbf)
 	if (pq->cli_last_mb != m->identifier) {
 		mb(); /* let the arbiter see the insert above */
 		err = pspat_mb_insert(pq->inq, m);
-//		BUG_ON(err);
 		pq->cli_last_mb = m->identifier;
 	}
 
@@ -68,6 +77,7 @@ pspat_cli_delete(struct pspat *arb, struct pspat_mailbox *m)
 			pq->arb_last_mb = NULL;
 	}
 	/* insert into the list of mb to be delete */
+	ENTRY_INIT(&m->entry);
 	TAILQ_INSERT_TAIL(&arb->mb_to_delete, &m->entry, entries);
 }
 
@@ -107,6 +117,7 @@ retry:
 	mbf = pspat_mb_extract(m);
 	if (mbf) {
 		/* let pspat_arb_ack() see this mailbox */
+		ENTRY_INIT(&m->entry);
 		TAILQ_INSERT_TAIL(&pq->mb_to_clear, &m->entry, entries);
 	} else  if (m->dead) {
 		/* possibily remove this mb from the ack list */
@@ -133,10 +144,10 @@ pspat_arb_prefetch(struct pspat *arb, struct pspat_queue *pq)
 static int
 pspat_arb_dispatch(struct pspat *arb, struct mbuf *mbf)
 {
-	struct pspat_dispatcher *s = &arb->dispatchers[0];
+	struct pspat_dispatcher s = arb->dispatchers[0];
 	int err;
 
-	err = pspat_mb_insert(s->mb, mbf);
+	err = pspat_mb_insert(s.mb, mbf);
 	if (err) {
 		/* Drop this mbf and possibly set the backpressure
 		 * flag for the last client on the per-CPU queue
@@ -144,7 +155,6 @@ pspat_arb_dispatch(struct pspat *arb, struct mbuf *mbf)
 		struct pspat_mailbox *cli_mb;
 		struct pspat_queue *pq;
 
-//		BUG_ON(!mbf->sender_cpu);
 		pq = pspat_arb->queues + mbf->sender_cpu - 1;
 		cli_mb = pq->arb_last_mb;
 
@@ -166,11 +176,11 @@ pspat_arb_ack(struct pspat_queue *pq)
 	struct pspat_mailbox *mb;
 	struct list *mb_entry, *mb_entry_temp;
 
-	TAILQ_FOREACH_SAFE( mb_entry, &pq->mb_to_clear, entries, mb_entry_temp) {
+	TAILQ_FOREACH_SAFE(mb_entry, &pq->mb_to_clear, entries, mb_entry_temp) {
 		mb = (struct pspat_mailbox *) mb_entry->mb;
-		pspat_mb_clear(mb);
 		TAILQ_REMOVE(&pq->mb_to_clear, mb_entry, entries);
-		ENTRY_INIT(mb_entry);
+		ENTRY_INIT(&mb->entry);
+		pspat_mb_clear(mb);
 	}
 }
 
@@ -181,7 +191,7 @@ pspat_arb_delete_dead_mbs(struct pspat *arb)
 	struct pspat_mailbox *mb;
 	struct list *mb_entry, *mb_entry_temp;
 
-	TAILQ_FOREACH_SAFE( mb_entry, &arb->mb_to_delete, entries, mb_entry_temp) {
+	TAILQ_FOREACH_SAFE(mb_entry, &arb->mb_to_delete, entries, mb_entry_temp) {
 		mb = (struct pspat_mailbox *) mb_entry->mb;
 		TAILQ_REMOVE(&arb->mb_to_delete, mb_entry, entries);
 		ENTRY_INIT(mb_entry);
@@ -196,7 +206,6 @@ pspat_arb_drain(struct pspat *arb, struct pspat_queue *pq)
 	struct mbuf *mbf;
 	int dropped = 0;
 
-//	BUG_ON(!m);
 	while ( (mbf = pspat_arb_get_mbf(arb, pq)) ) {
 		m_free(mbf);
 		dropped++;
@@ -221,7 +230,9 @@ pspat_txqs_flush(struct mbuf *m)
 		struct ifnet *ifp = m->ifp;
 		n = m->m_nextpkt;
 		m->m_nextpkt = NULL;
+		total_output_packets++;
 		ether_output_frame(ifp, m);
+//		ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 	}
 }
 
@@ -260,10 +271,6 @@ pspat_do_arbiter(struct pspat *arb)
 		struct pspat_queue *pq = arb->queues + i;
 		struct mbuf *mbf;
 		bool empty = true;
-
-		if (now < pq->arb_extract_next) {
-			continue;
-		}
 		pq->arb_extract_next = now + (pspat_arb_interval_ns << 10);
 
 		pspat_arb_prefetch(arb, (i + 1 < arb->n_queues ? pq + 1 : arb->queues));
@@ -302,6 +309,8 @@ pspat_do_arbiter(struct pspat *arb)
 				link_idle = now;
 			}
 		}
+
+		pspat_mb_clear(m);
 	}
 
 	/* Update statistics on avg/max cost of the arbiter loop and
@@ -324,6 +333,8 @@ pspat_do_arbiter(struct pspat *arb)
 		arb->max_picos = 0;
 		arb->num_reqs = 0;
 	}
+
+	pause("Thread_pause", 1000);
 
 	return 0;
 }
@@ -348,9 +359,12 @@ pspat_shutdown(struct pspat *arb)
 	printf("%s: CMs drained, found %d mbfs\n", __func__, n);
 }
 
+extern int pspat_client_handler(struct mbuf *mbuf, struct ifnet *ifp);
+
 int
 pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
 {
+	total_input_packets++;
 	int cpu, rc = 0;
 	struct pspat_queue *pq;
 	struct pspat *arb;
@@ -378,6 +392,8 @@ pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
 	}
 	return rc;
 }
+
+extern void exit_pspat(void);
 
 /* Called on thread exit() to clean-up PSPAT mailbox, if any. */
 void

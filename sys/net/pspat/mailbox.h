@@ -10,7 +10,7 @@
 #define PSPAT_MB_NAMSZ	32
 #define PSPAT_MB_DEBUG 1
 
-#define ENTRY_EMPTY(entry) (((&entry)->entries.tqe_next == NULL) && (*((&entry)->entries.tqe_prev) == NULL))
+#define ENTRY_EMPTY(entry) ((entry.entries.tqe_next == NULL) && ((entry.entries.tqe_prev) == NULL))
 
 struct list {
 	TAILQ_ENTRY(list)	entries;
@@ -18,7 +18,7 @@ struct list {
 };
 
 static inline void ENTRY_INIT (struct list *entry) {
-	*entry->entries.tqe_prev = NULL;
+	entry->entries.tqe_prev = NULL;
 	entry->entries.tqe_next = NULL;
 }
 
@@ -108,7 +108,6 @@ static inline int pspat_mb_insert(struct pspat_mailbox *m, void *v)
 		m->prod_check += m->line_entries;
 		__builtin_prefetch((char *)h + m->line_entries);
 	}
-//	BUG_ON(((void *)v) & 0x1);
 	m->q[m->prod_write & m->entry_mask] = v;
 	m->prod_write++;
 	return 0;
