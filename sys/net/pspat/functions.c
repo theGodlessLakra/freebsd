@@ -224,16 +224,9 @@ pspat_arb_drain(struct pspat *arb, struct pspat_queue *pq)
 static void
 pspat_txqs_flush(struct mbuf *m)
 {
-	struct mbuf *n;
-
-	for (; m != NULL; m = n) {
-		struct ifnet *ifp = m->ifp;
-		n = m->m_nextpkt;
-		m->m_nextpkt = NULL;
-		total_output_packets++;
-		ether_output_frame(ifp, m);
-//		ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
-	}
+//	struct ifnet *ifp = m->ifp;
+//	ether_output_frame(ifp, m);
+//	ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 }
 
 /* Function implementing the arbiter. */
@@ -334,8 +327,7 @@ pspat_do_arbiter(struct pspat *arb)
 		arb->num_reqs = 0;
 	}
 
-	pause("Thread_pause", 1000);
-
+	pause("Thread_pause", 100);
 	return 0;
 }
 
@@ -364,7 +356,14 @@ extern int pspat_client_handler(struct mbuf *mbuf, struct ifnet *ifp);
 int
 pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
 {
-	total_input_packets++;
+	static struct mbuf *ins_mbf;
+
+	if(mbf == ins_mbf) {
+		return -ENOTTY;
+	} else {
+		ins_mbf = mbf;
+	}
+
 	int cpu, rc = 0;
 	struct pspat_queue *pq;
 	struct pspat *arb;

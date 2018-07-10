@@ -872,12 +872,10 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 		if (pspat_enable)
 		{	
 //			if (dir == (DIR_OUT | PROTO_LAYER2)) {
-//				printf("Redirecting packet\n");
 //				int ret = pspat_client_handler(*m0, fwa->oif);
 //				return ret;
 //			}
 			if (dir == DIR_OUT) {
-				printf("Redirecting packet\n");
 				int ret = pspat_client_handler(*m0, fwa->oif);
 				return ret;
 			}
