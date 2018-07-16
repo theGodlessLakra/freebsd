@@ -373,9 +373,9 @@ struct thread {
 	void		*td_lkpi_task;	/* LinuxKPI task struct pointer */
 	TAILQ_ENTRY(thread) td_epochq;	/* (t) Epoch queue. */
 	epoch_section_t td_epoch_section; /* (t) epoch section object */
-//#ifdef CONFIG_PSPAT
+#ifdef PSPAT
 	struct pspat_mailbox            *pspat_mb; /* PSPAT networking subsystem. */
-//#endif
+#endif
 };
 
 struct thread0_storage {
