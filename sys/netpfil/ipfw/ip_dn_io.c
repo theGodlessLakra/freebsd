@@ -871,15 +871,16 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 #ifdef PSPAT
 //	if (pspat_enable)
 //	{
-		if (dir == (DIR_OUT | PROTO_LAYER2)) {
-			int ret = ether_output_frame(fwa->oif, *m0);
-//			int ret = pspat_client_handler(*m0, fwa->oif);
-			return ret;
-		}
-//		if (dir == DIR_OUT) {
+//		if (dir == (DIR_OUT | PROTO_LAYER2)) {
+//			int ret = ether_output_frame(fwa->oif, *m0);
 //			int ret = pspat_client_handler(*m0, fwa->oif);
 //			return ret;
 //		}
+		if (dir == DIR_OUT) {
+			int ret = ip_output(*m0, NULL, NULL, IP_FORWARDING, NULL, NULL);
+//			int ret = pspat_client_handler(*m0, fwa->oif);
+			return ret;
+		}
 //	}
 #endif
 
