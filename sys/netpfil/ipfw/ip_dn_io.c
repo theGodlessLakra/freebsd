@@ -876,14 +876,13 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 //			int ret = pspat_client_handler(*m0, fwa->oif);
 //			return ret;
 //		}
-		if (dir == DIR_OUT) {
-			int ret = ip_output(*m0, NULL, NULL, IP_FORWARDING, NULL, NULL);
+//		if (dir == DIR_OUT) {
+//			int ret = ip_output(*m0, NULL, NULL, IP_FORWARDING, NULL, NULL);
 //			int ret = pspat_client_handler(*m0, fwa->oif);
-			return ret;
-		}
+//			return ret;
+//		}
 //	}
 #endif
-
 	struct mbuf *m = *m0;
 	struct dn_fsk *fs = NULL;
 	struct dn_sch_inst *si;
@@ -896,6 +895,10 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	/* we could actually tag outside the lock, but who cares... */
 	if (tag_mbuf(m, dir, fwa))
 		goto dropit;
+#ifdef PSPAT
+	*m0 = NULL;
+	goto done;
+#endif
 	if (dn_cfg.busy) {
 		/* if the upper half is busy doing something expensive,
 		 * lets queue the packet and move forward
