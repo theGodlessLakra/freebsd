@@ -18,6 +18,8 @@
 
 extern int pspat_enable;
 
+extern void dummynet_send(struct mbuf *);
+
 /* Pseudo-identifier for client mailboxes. It's used by pspat_cli_push()
  * to decide when to insert an entry in the CL. Way safer than the previous
  * approach, but there are still theoretical race conditions for an
@@ -224,6 +226,7 @@ pspat_arb_drain(struct pspat *arb, struct pspat_queue *pq)
 static void
 pspat_txqs_flush(struct mbuf *m)
 {
+	dummynet_send(m);
 //	struct ifnet *ifp = m->ifp;
 //	ether_output_frame(ifp, m);
 //	ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);

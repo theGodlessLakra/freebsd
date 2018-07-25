@@ -241,7 +241,7 @@ SYSEND
 
 #endif
 
-static void	dummynet_send(struct mbuf *);
+extern void	dummynet_send(struct mbuf *);
 
 /*
  * Return the mbuf tag holding the dummynet state (it should
@@ -741,7 +741,7 @@ dummynet_task(void *context, int pending)
  * forward a chain of packets to the proper destination.
  * This runs outside the dummynet lock.
  */
-static void
+extern void
 dummynet_send(struct mbuf *m)
 {
 	struct mbuf *n;
@@ -868,21 +868,6 @@ tag_mbuf(struct mbuf *m, int dir, struct ip_fw_args *fwa)
 int
 dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 {
-#ifdef PSPAT
-//	if (pspat_enable)
-//	{
-//		if (dir == (DIR_OUT | PROTO_LAYER2)) {
-//			int ret = ether_output_frame(fwa->oif, *m0);
-//			int ret = pspat_client_handler(*m0, fwa->oif);
-//			return ret;
-//		}
-//		if (dir == DIR_OUT) {
-//			int ret = ip_output(*m0, NULL, NULL, IP_FORWARDING, NULL, NULL);
-//			int ret = pspat_client_handler(*m0, fwa->oif);
-//			return ret;
-//		}
-//	}
-#endif
 	struct mbuf *m = *m0;
 	struct dn_fsk *fs = NULL;
 	struct dn_sch_inst *si;
@@ -896,8 +881,17 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	if (tag_mbuf(m, dir, fwa))
 		goto dropit;
 #ifdef PSPAT
-	*m0 = NULL;
-	goto done;
+	if (pspat_enable)
+	{
+//		if (dir == (DIR_OUT | PROTO_LAYER2)) {
+//			int ret = pspat_client_handler(m, fwa->oif);
+//			return ret;
+//		}
+		if (dir == DIR_OUT) {
+			int ret = pspat_client_handler(m, fwa->oif);
+			return ret;
+		}
+	}
 #endif
 	if (dn_cfg.busy) {
 		/* if the upper half is busy doing something expensive,
