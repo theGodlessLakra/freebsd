@@ -370,6 +370,7 @@ passout:
 		 * Send off the packet via outgoing interface
 		 */
 		IP_PROBE(send, NULL, NULL, ip, nh.nh_ifp, ip, NULL);
+		printf("ip_fastfwd.c line 373\n");
 		error = (*nh.nh_ifp->if_output)(nh.nh_ifp, m,
 		    (struct sockaddr *)&dst, NULL);
 	} else {
@@ -406,6 +407,7 @@ passout:
 				    mtod(m, struct ip *), nh.nh_ifp,
 				    mtod(m, struct ip *), NULL);
 				/* XXX: we can use cached route here */
+				printf("ip_fastfwd.c line 409\n");
 				error = (*nh.nh_ifp->if_output)(nh.nh_ifp, m,
 				    (struct sockaddr *)&dst, NULL);
 				if (error)

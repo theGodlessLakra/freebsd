@@ -1189,6 +1189,7 @@ bpfwrite(struct cdev *dev, struct uio *uio, int ioflag)
 		ro.ro_flags = RT_HAS_HEADER;
 	}
 
+	printf("bpf.c line 1192\n");
 	error = (*ifp->if_output)(ifp, m, &dst, &ro);
 	if (error)
 		counter_u64_add(d->bd_wdcount, 1);

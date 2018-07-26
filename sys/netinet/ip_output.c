@@ -193,6 +193,11 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, struct inpcb *inp,
 
 	return 0;
 }
+#ifdef PSPAT
+extern int pspat_enable;
+extern int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
+		const struct sockaddr *gw, struct route *ro);
+#endif
 
 /*
  * IP output.  The packet in mbuf chain m contains a skeletal IP
@@ -659,8 +664,19 @@ sendit:
 			m->m_pkthdr.snd_tag = NULL;
 		}
 #endif
-		error = (*ifp->if_output)(ifp, m,
-		    (const struct sockaddr *)gw, ro);
+#ifdef PSPAT
+		if(pspat_enable) {
+			printf("Sending packet %d to PSPAT\n", (int) m);
+			error = pspat_client_handler(m, ifp,
+				(const struct sockaddr *)gw, ro);
+		} else
+#endif
+		{
+			printf("Normal if_output call\n");
+			error = (*ifp->if_output)(ifp, m,
+		    		(const struct sockaddr *)gw, ro);
+		}
+
 #ifdef RATELIMIT
 		/* check for route change */
 		if (error == EAGAIN)
@@ -711,6 +727,7 @@ sendit:
 				m->m_pkthdr.snd_tag = NULL;
 			}
 #endif
+			printf("ip_output.c line 714\n");
 			error = (*ifp->if_output)(ifp, m,
 			    (const struct sockaddr *)gw, ro);
 #ifdef RATELIMIT

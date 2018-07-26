@@ -881,17 +881,17 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	if (tag_mbuf(m, dir, fwa))
 		goto dropit;
 #ifdef PSPAT
-	if (pspat_enable)
-	{
+//	if (pspat_enable)
+//	{
 //		if (dir == (DIR_OUT | PROTO_LAYER2)) {
 //			int ret = pspat_client_handler(m, fwa->oif);
 //			return ret;
 //		}
-		if (dir == DIR_OUT) {
-			int ret = pspat_client_handler(m, fwa->oif);
-			return ret;
-		}
-	}
+//		if (dir == DIR_OUT) {
+//			int ret = pspat_client_handler(m, fwa->oif);
+//			return ret;
+//		}
+//	}
 #endif
 	if (dn_cfg.busy) {
 		/* if the upper half is busy doing something expensive,

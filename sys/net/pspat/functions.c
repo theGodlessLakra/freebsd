@@ -146,6 +146,7 @@ pspat_arb_prefetch(struct pspat *arb, struct pspat_queue *pq)
 static int
 pspat_arb_dispatch(struct pspat *arb, struct mbuf *mbf)
 {
+	printf("Inside arb_dispatch with packet %d\n", (int) mbf);
 	struct pspat_dispatcher s = arb->dispatchers[0];
 	int err;
 
@@ -226,8 +227,11 @@ pspat_arb_drain(struct pspat *arb, struct pspat_queue *pq)
 static void
 pspat_txqs_flush(struct mbuf *m)
 {
-	dummynet_send(m);
-//	struct ifnet *ifp = m->ifp;
+//	dummynet_send(m);
+	struct ifnet *ifp = m->ifp;
+	printf("Sending packet %d out\n", (int) m);
+	(*ifp->if_output)(ifp, m, m->gw, m->ro);
+	printf("Sent packet out\n");
 //	ether_output_frame(ifp, m);
 //	ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 }
@@ -236,6 +240,7 @@ pspat_txqs_flush(struct mbuf *m)
 int
 pspat_do_arbiter(struct pspat *arb)
 {
+	printf("Inside Arbiter\n");
 	int i;
 	struct timespec ts;
 	nanotime(&ts);
@@ -272,6 +277,7 @@ pspat_do_arbiter(struct pspat *arb)
 		pspat_arb_prefetch(arb, (i + 1 < arb->n_queues ? pq + 1 : arb->queues));
 
 		while ( (mbf = pspat_arb_get_mbf(arb, pq)) ) {
+			printf("Arbter sending packet %d to dispatch\n", (int) mbf);
 			pspat_arb_dispatch(arb, mbf);
 
 			empty = false;
@@ -299,6 +305,7 @@ pspat_do_arbiter(struct pspat *arb)
 		while (link_idle < now && ndeq < pspat_arb_batch) {
 			if ((mbf = pspat_mb_extract(m)) != NULL) {
 				link_idle += picos_per_byte * mbf->m_len;
+				printf("Arbiter sending packet %d to TXQ\n", (int) mbf);
 				pspat_txqs_flush(mbf);
 				ndeq ++;
 			} else {
@@ -354,11 +361,14 @@ pspat_shutdown(struct pspat *arb)
 	printf("%s: CMs drained, found %d mbfs\n", __func__, n);
 }
 
-extern int pspat_client_handler(struct mbuf *mbuf, struct ifnet *ifp);
+extern int pspat_client_handler(struct mbuf *mbuf, struct ifnet *ifp,
+		const struct sockaddr *gw, struct route *ro);
 
 int
-pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
+pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
+		const struct sockaddr *gw, struct route *ro)
 {
+	printf("Inside pspat_client_handler() with packet %d\n", (int) mbf);
 	static struct mbuf *ins_mbf;
 
 	if(mbf == ins_mbf) {
@@ -383,8 +393,11 @@ pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp)
 	cpu = curthread->td_oncpu;
 	mbf->sender_cpu = cpu;
 	mbf->ifp = ifp;
+	mbf->gw = gw;
+	mbf->ro = ro;
 
 	pq = arb->queues + cpu;
+	printf("pspat_client_handler sending packet %d to cli_push\n", (int) mbf);
 	if (pspat_cli_push(pq, mbf)) {
 		pspat_stats[cpu].inq_drop++;
 		rc = 1;

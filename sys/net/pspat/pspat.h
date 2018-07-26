@@ -68,7 +68,8 @@ extern struct rwlock pspat_rwlock;
 
 int pspat_do_arbiter(struct pspat *arb);
 
-int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp);
+int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
+		const struct sockaddr *gw, struct route *ro);
 
 void pspat_shutdown(struct pspat *arb);
 

@@ -282,6 +282,7 @@ passout:
 	if (IN6_IS_SCOPE_LINKLOCAL(&dst.sin6_addr))
 		dst.sin6_addr.s6_addr16[1] = htons(nh.nh_ifp->if_index & 0xffff);
 
+	printf("ip6_fastfwd.c line 285\n");
 	error = (*nh.nh_ifp->if_output)(nh.nh_ifp, m,
 	    (struct sockaddr *)&dst, NULL);
 	if (error != 0) {

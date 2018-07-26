@@ -290,6 +290,8 @@ struct mbuf {
 	};
 #ifdef PSPAT
 	struct ifnet *ifp;
+	const struct sockaddr *gw;
+	struct route *ro;
 	int sender_cpu;
 #endif
 };
