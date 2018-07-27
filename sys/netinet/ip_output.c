@@ -672,7 +672,6 @@ sendit:
 		} else
 #endif
 		{
-			printf("Normal if_output call\n");
 			error = (*ifp->if_output)(ifp, m,
 		    		(const struct sockaddr *)gw, ro);
 		}
@@ -727,7 +726,6 @@ sendit:
 				m->m_pkthdr.snd_tag = NULL;
 			}
 #endif
-			printf("ip_output.c line 714\n");
 			error = (*ifp->if_output)(ifp, m,
 			    (const struct sockaddr *)gw, ro);
 #ifdef RATELIMIT

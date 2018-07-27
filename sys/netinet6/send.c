@@ -197,7 +197,6 @@ send_output(struct mbuf *m, struct ifnet *ifp, int direction)
 		 * if now needed?
 		 */
 		int error;
-		printf("send.c line 200\n");
 		error = ((*ifp->if_output)(ifp, m, (struct sockaddr *)&dst,
 		    NULL));
 		if (error)

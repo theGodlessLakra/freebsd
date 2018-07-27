@@ -2220,7 +2220,6 @@ nd6_output_ifp(struct ifnet *ifp, struct ifnet *origifp, struct mbuf *m,
 	if ((ifp->if_flags & IFF_LOOPBACK) == 0)
 		origifp = ifp;
 
-	printf("nd6.c line 2223\n");
 	error = (*ifp->if_output)(origifp, m, (struct sockaddr *)dst, ro);
 	return (error);
 }

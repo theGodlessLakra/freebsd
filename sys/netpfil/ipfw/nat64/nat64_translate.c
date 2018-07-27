@@ -94,7 +94,6 @@ nat64_output(struct ifnet *ifp, struct mbuf *m, struct sockaddr *dst,
 
 	if (logdata != NULL)
 		nat64_log(logdata, m, dst->sa_family);
-	printf("nat_tranclate.c line 97\n");
 	error = (*ifp->if_output)(ifp, m, dst, NULL);
 	if (error != 0)
 		NAT64STAT_INC(stats, oerrors);
@@ -149,7 +148,6 @@ nat64_output_one(struct mbuf *m, struct nat64_counters *stats, void *logdata)
 	}
 	if (logdata != NULL)
 		nat64_log(logdata, m, dst->sa_family);
-	printf("nat_translate.c line 151\n");
 	error = (*ifp->if_output)(ifp, m, dst, NULL);
 	if (error != 0)
 		NAT64STAT_INC(stats, oerrors);

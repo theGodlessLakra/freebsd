@@ -425,7 +425,6 @@ arprequest(struct ifnet *ifp, const struct in_addr *sip,
 
 	m->m_flags |= M_BCAST;
 	m_clrprotoflags(m);	/* Avoid confusing lower layers. */
-	printf("if_ether.c line 428\n");
 	(*ifp->if_output)(ifp, m, &sa, &ro);
 	ARPSTAT_INC(txrequests);
 }
@@ -1133,7 +1132,6 @@ reply:
 	ro.ro_flags = 0;
 
 	m_clrprotoflags(m);	/* Avoid confusing lower layers. */
-	printf("if_ether.c line 1135\n");
 	(*ifp->if_output)(ifp, m, &sa, &ro);
 	ARPSTAT_INC(txreplies);
 	return;
@@ -1235,7 +1233,6 @@ arp_check_update_lle(struct arphdr *ah, struct in_addr isaddr, struct ifnet *ifp
 			m_hold->m_nextpkt = NULL;
 			/* Avoid confusing lower layers. */
 			m_clrprotoflags(m_hold);
-			printf("if_ether.c line 1236\n");
 			(*ifp->if_output)(ifp, m_hold, &sa, NULL);
 		}
 	} else
