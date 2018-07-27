@@ -424,6 +424,10 @@ qht_delete(struct dn_fsk *fs, int flags)
 	}
 }
 
+struct dn_queue *
+ipdn_q_find(struct dn_fsk *fs, struct dn_sch_inst *si,
+	struct ipfw_flow_id *id);
+
 /*
  * Find and possibly create the queue for a MULTIQUEUE scheduler.
  * We never call it for !MULTIQUEUE (the queue is in the sch_inst).
@@ -578,6 +582,8 @@ si_destroy(void *_si, void *arg)
 	return DNHT_SCAN_DEL;
 }
 
+extern struct dn_sch_inst *
+ipdn_si_find(struct dn_schk *s, struct ipfw_flow_id *id);
 /*
  * Find the scheduler instance for this packet. If we need to apply
  * a mask, do on a local copy of the flow_id to preserve the original.

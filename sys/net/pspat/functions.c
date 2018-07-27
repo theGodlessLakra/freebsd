@@ -8,10 +8,6 @@
 #include <sys/socket.h>
 #include <net/if.h>
 #include <net/if_var.h>
-#include <net/if_types.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/ip_var.h>
 
 #define	NSEC_PER_SEC	1000000000L
 #define	PSPAT_ARB_STATS_LOOPS	0x1000
@@ -146,7 +142,6 @@ pspat_arb_prefetch(struct pspat *arb, struct pspat_queue *pq)
 static int
 pspat_arb_dispatch(struct pspat *arb, struct mbuf *mbf)
 {
-	printf("Inside arb_dispatch with packet %d\n", (int) mbf);
 	struct pspat_dispatcher s = arb->dispatchers[0];
 	int err;
 
@@ -228,19 +223,22 @@ static void
 pspat_txqs_flush(struct mbuf *m)
 {
 //	dummynet_send(m);
-	struct ifnet *ifp = m->ifp;
-	printf("Sending packet %d out\n", (int) m);
-	(*ifp->if_output)(ifp, m, m->gw, m->ro);
-	printf("Sent packet out\n");
+//	struct ifnet *ifp = m->ifp;
+//	(*ifp->if_output)(ifp, m, m->gw, m->ro);
 //	ether_output_frame(ifp, m);
 //	ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 }
+
+extern struct dn_parms dn_cfg;
+extern void *dn_ht_find(struct dn_ht *ht, uintptr_t key, int flags, void *arg);
+extern struct dn_sch_inst *ipdn_si_find(struct dn_schk *s, struct ipfw_flow_id *id);
+extern struct dn_queue *ipdn_q_find(struct dn_fsk *fs, struct dn_sch_inst *si,
+		struct ipfw_flow_id *id);
 
 /* Function implementing the arbiter. */
 int
 pspat_do_arbiter(struct pspat *arb)
 {
-	printf("Inside Arbiter\n");
 	int i;
 	struct timespec ts;
 	nanotime(&ts);
@@ -249,6 +247,7 @@ pspat_do_arbiter(struct pspat *arb)
 	static unsigned long last_pspat_rate = 0;
 	static unsigned long picos_per_byte = 1;
 	unsigned int nreqs = 0;
+	static int first_packet = 1;
 
 	/* number of empty client lists found in the last round
 	 * (after a round with only empty CLs, we can safely
@@ -277,8 +276,26 @@ pspat_do_arbiter(struct pspat *arb)
 		pspat_arb_prefetch(arb, (i + 1 < arb->n_queues ? pq + 1 : arb->queues));
 
 		while ( (mbf = pspat_arb_get_mbf(arb, pq)) ) {
-			printf("Arbter sending packet %d to dispatch\n", (int) mbf);
-			pspat_arb_dispatch(arb, mbf);
+
+			/* Enqueue to SA here */
+			if (first_packet) {
+				struct ip_fw_args *fwa = mbf->fwa;
+
+				int fs_id = (fwa->rule.info & IPFW_INFO_MASK) +
+				((fwa->rule.info & IPFW_IS_PIPE) ? 2*DN_MAX_ID : 0);
+				arb->fs = dn_ht_find(dn_cfg.fshash, fs_id, 0, NULL);
+				arb->si = ipdn_si_find(arb->fs->sched, &(fwa->f_id));
+
+				if (arb->fs->sched->fp->flags & DN_MULTIQUEUE)
+					arb->q = ipdn_q_find(arb->fs, arb->si, &(fwa->f_id));
+
+				arb->fs->sched->fp->enqueue(arb->si, arb->q, mbf);
+
+				first_packet = 0;
+
+			} else {
+				arb->fs->sched->fp->enqueue(arb->si, arb->q, mbf);
+			}
 
 			empty = false;
 			++nreqs;
@@ -296,6 +313,14 @@ pspat_do_arbiter(struct pspat *arb)
 		pspat_arb_ack(pq);     /* to clients */
 	}
 
+	/* Dequeue from SA and send to dispatcher mailbox here */
+	if (arb->fs){
+		struct mbuf *mbf;
+		while ( (mbf = arb->fs->sched->fp->dequeue(arb->si)) ) {
+			pspat_arb_dispatch(arb, mbf);
+		}
+	}
+
 	if (pspat_xmit_mode == PSPAT_XMIT_MODE_ARB) {
 		unsigned int ndeq = 0;
 
@@ -305,7 +330,6 @@ pspat_do_arbiter(struct pspat *arb)
 		while (link_idle < now && ndeq < pspat_arb_batch) {
 			if ((mbf = pspat_mb_extract(m)) != NULL) {
 				link_idle += picos_per_byte * mbf->m_len;
-				printf("Arbiter sending packet %d to TXQ\n", (int) mbf);
 				pspat_txqs_flush(mbf);
 				ndeq ++;
 			} else {
@@ -361,14 +385,11 @@ pspat_shutdown(struct pspat *arb)
 	printf("%s: CMs drained, found %d mbfs\n", __func__, n);
 }
 
-extern int pspat_client_handler(struct mbuf *mbuf, struct ifnet *ifp,
-		const struct sockaddr *gw, struct route *ro);
+extern int pspat_client_handler(struct mbuf *mbuf, struct ip_fw_args *fwa);
 
 int
-pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
-		const struct sockaddr *gw, struct route *ro)
+pspat_client_handler(struct mbuf *mbf,  struct ip_fw_args *fwa)
 {
-	printf("Inside pspat_client_handler() with packet %d\n", (int) mbf);
 	static struct mbuf *ins_mbf;
 
 	if(mbf == ins_mbf) {
@@ -392,12 +413,12 @@ pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
 
 	cpu = curthread->td_oncpu;
 	mbf->sender_cpu = cpu;
-	mbf->ifp = ifp;
-	mbf->gw = gw;
-	mbf->ro = ro;
+	mbf->fwa = fwa;
+	mbf->ifp = fwa->oif;
+//	mbf->gw = gw;
+//	mbf->ro = ro;
 
 	pq = arb->queues + cpu;
-	printf("pspat_client_handler sending packet %d to cli_push\n", (int) mbf);
 	if (pspat_cli_push(pq, mbf)) {
 		pspat_stats[cpu].inq_drop++;
 		rc = 1;

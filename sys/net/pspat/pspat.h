@@ -9,10 +9,27 @@
 #include <sys/types.h>
 #include <sys/proc.h>
 #include <sys/lock.h>
+#include <sys/module.h>
 #include <sys/rwlock.h>
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip_var.h>
+#include <netinet/ip_fw.h>
+#include <netinet/ip_dummynet.h>
+#include <netinet/if_ether.h>
+#include <netinet/ip6.h>
+#include <netinet6/ip6_var.h>
+
+#include <netpfil/ipfw/ip_fw_private.h>
+#include <netpfil/ipfw/dn_heap.h>
+#include <netpfil/ipfw/ip_dn_private.h>
+#ifdef NEW_AQM
+#include <netpfil/ipfw/dn_aqm.h>
+#endif
+#include <netpfil/ipfw/dn_sched.h>
 
 #include "mailbox.h"
 
@@ -46,6 +63,10 @@ struct pspat {
 	 */
 	struct entry_list mb_to_delete;
 
+	struct dn_fsk		*fs;
+	struct dn_sch_inst	*si;
+	struct dn_queue		*q;
+
 	/* Statistics to evaluate the cost of an arbiter loop. */
 	unsigned int		num_loops;
 	unsigned int		num_reqs;
@@ -68,8 +89,7 @@ extern struct rwlock pspat_rwlock;
 
 int pspat_do_arbiter(struct pspat *arb);
 
-int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
-		const struct sockaddr *gw, struct route *ro);
+int pspat_client_handler(struct mbuf *mbf,  struct ip_fw_args *fwa);
 
 void pspat_shutdown(struct pspat *arb);
 

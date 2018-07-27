@@ -392,6 +392,8 @@ pspat_create(void)
 		m = (struct pspat_mailbox *) ((char *)m + mb_size);
 	}
 
+	arbp->fs = NULL;
+
 	ret = kthread_add(arb_worker_func, arbp, NULL,
 		&arbp->arb_thread, 0, 0, "pspat_arbiter_thread");
 	if (ret) {

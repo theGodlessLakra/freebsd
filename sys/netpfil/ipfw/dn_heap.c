@@ -446,6 +446,9 @@ dn_ht_entries(struct dn_ht *ht)
 	return ht ? ht->entries : 0;
 }
 
+extern void *
+dn_ht_find(struct dn_ht *ht, uintptr_t key, int flags, void *arg);
+
 /* lookup and optionally create or delete element */
 void *
 dn_ht_find(struct dn_ht *ht, uintptr_t key, int flags, void *arg)
