@@ -669,6 +669,9 @@ sendit:
 			printf("Sending packet %p to PSPAT\n", m);
 			error = pspat_client_handler(m, ifp,
 				(const struct sockaddr *)gw, ro);
+			int i, x=0;
+			for(i=0; i<99999999; i++)
+				x += 1;
 		} else
 #endif
 		{
