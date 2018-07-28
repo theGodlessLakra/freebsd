@@ -195,8 +195,8 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, struct inpcb *inp,
 }
 #ifdef PSPAT
 extern int pspat_enable;
-//extern int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
-//		const struct sockaddr *gw, struct route *ro);
+extern int pspat_client_handler(struct mbuf *mbf,  struct ifnet *ifp,
+		const struct sockaddr *gw, struct route *ro);
 #endif
 
 /*
@@ -665,11 +665,11 @@ sendit:
 		}
 #endif
 #ifdef PSPAT
-//		if(pspat_enable) {
-//			printf("Sending packet %d to PSPAT\n", (int) m);
-//			error = pspat_client_handler(m, ifp,
-//				(const struct sockaddr *)gw, ro);
-//		} else
+		if(pspat_enable) {
+			printf("Sending packet %p to PSPAT\n", m);
+			error = pspat_client_handler(m, ifp,
+				(const struct sockaddr *)gw, ro);
+		} else
 #endif
 		{
 			error = (*ifp->if_output)(ifp, m,

@@ -93,7 +93,7 @@ static unsigned long	io_pkt_fast;
 
 #ifdef PSPAT
 extern int pspat_enable;
-extern int pspat_client_handler(struct mbuf *mbf, struct ip_fw_args *fwa);
+//extern int pspat_client_handler(struct mbuf *mbf, struct ip_fw_args *fwa);
 #endif
 
 #ifdef NEW_AQM
@@ -881,17 +881,17 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	if (tag_mbuf(m, dir, fwa))
 		goto dropit;
 #ifdef PSPAT
-	if (pspat_enable)
-	{
+//	if (pspat_enable)
+//	{
 //		if (dir == (DIR_OUT | PROTO_LAYER2)) {
 //			int ret = pspat_client_handler(m, fwa->oif);
 //			return ret;
 //		}
-		if (dir == DIR_OUT) {
-			int ret = pspat_client_handler(m, fwa);
-			return ret;
-		}
-	}
+//		if (dir == DIR_OUT) {
+//			int ret = pspat_client_handler(m, fwa);
+//			return ret;
+//		}
+//	}
 #endif
 	DN_BH_WLOCK();
 	if (dn_cfg.busy) {
