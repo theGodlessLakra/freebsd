@@ -225,8 +225,8 @@ pspat_txqs_flush(struct mbuf *m)
 {
 //	dummynet_send(m);
 	printf("Snding packet %p out\n", m);
-//	struct ifnet *ifp = m->ifp;
-//	(*ifp->if_output)(ifp, m, m->gw, m->ro);
+	struct ifnet *ifp = m->ifp;
+	(*ifp->if_output)(ifp, m, m->gw, m->ro);
 	printf("Sent packet %p out\n", m);
 //	ether_output_frame(ifp, m);
 //	ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
