@@ -666,7 +666,7 @@ sendit:
 #endif
 #ifdef PSPAT
 		if(pspat_enable) {
-			printf("Sending packet %p to PSPAT\n", m);
+			printf("Sending packet %p to PSPAT, with ifp = %p, gw = %p, ro = %p\n", m, ifp, gw, ro);
 			error = pspat_client_handler(m, ifp,
 				(const struct sockaddr *)gw, ro);
 			int i, x=0;

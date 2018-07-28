@@ -224,7 +224,7 @@ static void
 pspat_txqs_flush(struct mbuf *m)
 {
 //	dummynet_send(m);
-	printf("Snding packet %p out\n", m);
+	printf("Sending packet %p out with ifp = %p, gw = %p, ro = %p\n", m, m->ifp, m->gw, m->ro);
 	struct ifnet *ifp = m->ifp;
 	(*ifp->if_output)(ifp, m, m->gw, m->ro);
 	printf("Sent packet %p out\n", m);
