@@ -76,6 +76,7 @@ __FBSDID("$FreeBSD$");
  * instead of dn_cfg.curr_time
  */
 
+extern struct dn_parms dn_cfg;
 struct dn_parms dn_cfg;
 //VNET_DEFINE(struct dn_parms, _base_dn_cfg);
 
@@ -95,6 +96,12 @@ unsigned long	io_pkt_drop;
 #else
 static unsigned long	io_pkt_drop;
 #endif
+
+#ifdef PSPAT
+extern int pspat_enable;
+extern int pspat_client_handler(struct mbuf *mbf, struct ip_fw_args *fwa);
+#endif
+
 /*
  * We use a heap to store entities for which we have pending timer events.
  * The heap is checked at every tick and all entities with expired events
@@ -236,7 +243,7 @@ SYSEND
 
 #endif
 
-static void	dummynet_send(struct mbuf *);
+extern void	dummynet_send(struct mbuf *);
 
 /*
  * Return the mbuf tag holding the dummynet state (it should
@@ -736,7 +743,7 @@ dummynet_task(void *context, int pending)
  * forward a chain of packets to the proper destination.
  * This runs outside the dummynet lock.
  */
-static void
+void
 dummynet_send(struct mbuf *m)
 {
 	struct mbuf *n;
@@ -870,11 +877,20 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 
 	int fs_id = (fwa->rule.info & IPFW_INFO_MASK) +
 		((fwa->rule.info & IPFW_IS_PIPE) ? 2*DN_MAX_ID : 0);
-	DN_BH_WLOCK();
+
 	io_pkt++;
-	/* we could actually tag outside the lock, but who cares... */
 	if (tag_mbuf(m, dir, fwa))
 		goto dropit;
+
+#ifdef PSPAT
+	if (pspat_enable && (dir == DIR_OUT))
+	{
+		int ret = pspat_client_handler(m, fwa);
+		return ret;
+	}
+#endif
+	DN_BH_WLOCK();
+
 	if (dn_cfg.busy) {
 		/* if the upper half is busy doing something expensive,
 		 * lets queue the packet and move forward

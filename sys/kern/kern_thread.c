@@ -501,6 +501,10 @@ thread_cow_update(struct thread *td)
 		lim_free(oldlimit);
 }
 
+#ifdef PSPAT
+extern void exit_pspat(void);
+#endif
+
 /*
  * Discard the current thread and exit from its context.
  * Always called with scheduler locked.
@@ -531,6 +535,10 @@ thread_exit(void)
 	    (long)p->p_pid, td->td_name);
 	SDT_PROBE0(proc, , , lwp__exit);
 	KASSERT(TAILQ_EMPTY(&td->td_sigqueue.sq_list), ("signal pending"));
+
+#ifdef PSPAT
+	exit_pspat();
+#endif
 
 	/*
 	 * drop FPU & debug register state storage, or any other

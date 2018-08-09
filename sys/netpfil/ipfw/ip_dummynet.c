@@ -424,6 +424,9 @@ qht_delete(struct dn_fsk *fs, int flags)
 	}
 }
 
+extern struct dn_queue * ipdn_q_find(struct dn_fsk *fs, struct dn_sch_inst *si,
+		struct ipfw_flow_id *id);
+
 /*
  * Find and possibly create the queue for a MULTIQUEUE scheduler.
  * We never call it for !MULTIQUEUE (the queue is in the sch_inst).
@@ -577,6 +580,9 @@ si_destroy(void *_si, void *arg)
 	dn_cfg.si_count--;
 	return DNHT_SCAN_DEL;
 }
+
+extern struct dn_sch_inst * ipdn_si_find(struct dn_schk *s,
+		struct ipfw_flow_id *id);
 
 /*
  * Find the scheduler instance for this packet. If we need to apply
@@ -2685,6 +2691,9 @@ static moduledata_t dummynet_mod = {
 #define	DN_MODEV_ORD	(SI_ORDER_ANY - 128) /* after ipfw */
 DECLARE_MODULE(dummynet, dummynet_mod, DN_SI_SUB, DN_MODEV_ORD);
 MODULE_DEPEND(dummynet, ipfw, 3, 3, 3);
+#ifdef PSPAT
+MODULE_DEPEND(dummynet, pspat, 1, 1, 1);
+#endif
 MODULE_VERSION(dummynet, 3);
 
 /*

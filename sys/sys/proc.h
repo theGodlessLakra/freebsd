@@ -361,6 +361,9 @@ struct thread {
 	int		td_oncpu;	/* (t) Which cpu we are on. */
 	void		*td_lkpi_task;	/* LinuxKPI task struct pointer */
 	int		td_pmcpend;
+#ifdef PSPAT
+	struct pspat_mailbox	*pspat_mb; /* PSPAT client mailbox. */
+#endif
 };
 
 struct thread0_storage {
