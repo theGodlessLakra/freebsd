@@ -248,7 +248,7 @@ pspat_do_arbiter(struct pspat *arb)
 	static unsigned long picos_per_byte = 1;
 	unsigned int nreqs = 0;
 
-	static int first_packet = 1;
+//	static int first_packet = 1;
 
 	/* number of empty client lists found in the last round
 	 * (after a round with only empty CLs, we can safely
@@ -279,7 +279,7 @@ pspat_do_arbiter(struct pspat *arb)
 		while ( (mbf = pspat_arb_get_mbf(arb, pq)) ) {
 
 			/* 
-			* Note : Comment the following statement - 287 and uncomment
+			* Note : Comment the following line - 287 and uncomment line - 251,
 			* lines 290 -  315 and lines 334 - 339 to use a scheduler instead of
 			* sending a packet from the arbiter to the dispatcher queue 
 			* directly.
