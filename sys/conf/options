@@ -474,6 +474,9 @@ TCP_SIGNATURE		opt_ipsec.h
 VLAN_ARRAY		opt_vlan.h
 XBONEHACK
 
+# PSPAT - Parallel Scheduling and Parallel Transmission Subsystem
+PSPAT			opt_global.h
+
 #
 # SCTP
 #
